@@ -26,7 +26,9 @@ if [ -n "$lab_user" ]; then
     runuser -u "$lab_user" -- tee "$settings_dir/settings.json" >/dev/null <<'EOF'
 {
     "workbench.startupEditor": "none",
-    "workbench.welcomePage.walkthroughs.openOnInstall": false
+    "workbench.welcomePage.walkthroughs.openOnInstall": false,
+    "chat.disableAIFeatures": true,
+    "chat.commandCenter.enabled": false
 }
 EOF
 fi
