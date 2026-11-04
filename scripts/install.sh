@@ -2,9 +2,18 @@
 set -euo pipefail
 
 sudo snap install astral-uv
-lab_files=${1:?usage: sudo env PATH="$PATH" scripts/install.sh labs/cli}
-repo=$(cd "$(dirname "$0")/.." && pwd)
-cd "$repo"
+lab_files=${1:?usage: curl -sL <raw url> | sudo bash -s -- labs/cli}
+    repo=/opt/lab-scorer
+    [ "$EUID" -eq 0 ] || { echo "Run as root" >&2; exit 1; }
+
+    command -v git >/dev/null || apt-get install -y git
+    if [ -d "$repo/.git" ]; then
+        git -C "$repo" pull --ff-only
+    else
+        git clone --depth 1 https://github.com/kieranhogg/lab-scorer.git "$repo"
+    fi
+    cd "$repo"
+    [ -d "$repo/$lab_files" ] || { echo "No such lab folder: $lab_files" >&2; exit 1; }
 
 export UV_PYTHON_INSTALL_DIR=/opt/python
 export UV_TOOL_DIR=/opt/uv-tools
@@ -35,3 +44,10 @@ fi
 chmod -R a+rX /opt/lab /lab
 
 command -v code >/dev/null || ! command -v snap >/dev/null || snap install code --classic
+
+cat > /usr/local/bin/lab <<EOF
+#!/usr/bin/env bash
+[ "\$EUID" -eq 0 ] || exec sudo "\$0" "\$@"
+exec env LAB_DIR=$repo LAB_HOME=/lab /opt/venv/bin/python $repo/run.py
+EOF
+chmod 755 /usr/local/bin/lab
