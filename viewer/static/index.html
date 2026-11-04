@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lab Checker</title>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.9/dist/cdn.min.js"></script>
+  <style>
+    :root {
+      --bg: #fff; --fg: #1d1d1f; --muted: #6e6e73; --line: #e2e2e5; --row-hover: #f6f6f8;
+      --help-bg: #fff3cd; --help-fg: #7a5200; --done: #1b7f3b; --progress: #3478f6; --off: #8e8e93;
+      --track: #e8e8ec; --error: #b00020;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #161618; --fg: #f2f2f4; --muted: #9a9aa0; --line: #2e2e32; --row-hover: #1f1f23;
+        --help-bg: #4a3a0a; --help-fg: #ffd66b; --done: #4cc16f; --progress: #5e9bff; --off: #6c6c72;
+        --track: #2c2c30; --error: #ff6b81;
+      }
+    }
+    body { font-family: system-ui, sans-serif; margin: 2rem auto; max-width: 64rem; padding: 0 1rem; background: var(--bg); color: var(--fg); }
+    header { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+    h1 { margin: 0 0 .25rem; }
+    .summary { color: var(--muted); font-size: .9rem; }
+    .summary strong { color: var(--fg); }
+    button { font: inherit; cursor: pointer; border: 1px solid var(--line); background: transparent; color: inherit; border-radius: .4rem; padding: .2rem .6rem; }
+    button:hover { background: var(--row-hover); }
+    table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+    th, td { text-align: left; padding: .55rem .5rem; border-bottom: 1px solid var(--line); vertical-align: middle; }
+    th { font-size: .8rem; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); }
+    tr.row { cursor: pointer; }
+    tr.row:hover { background: var(--row-hover); }
+    tr.help { background: var(--help-bg); color: var(--help-fg); font-weight: 600; }
+    tr.offline td { opacity: .55; }
+    .muted { color: var(--muted); }
+    .error { color: var(--error); }
+    .badge { display: inline-block; padding: .1rem .55rem; border-radius: 1rem; font-size: .8rem; font-weight: 600; border: 1px solid currentColor; }
+    .badge.help { color: var(--help-fg); } .badge.done { color: var(--done); }
+    .badge.progress { color: var(--progress); } .badge.offline { color: var(--off); } .badge.waiting { color: var(--muted); }
+    .bar { display: flex; align-items: center; gap: .5rem; min-width: 8rem; }
+    .track { flex: 1; height: .45rem; border-radius: .25rem; background: var(--track); overflow: hidden; }
+    .fill { height: 100%; background: var(--progress); }
+    .done .fill { background: var(--done); }
+    td.term { padding: 0 .5rem .75rem; border-bottom: 1px solid var(--line); }
+    pre.term { margin: 0; padding: .75rem; background: #111; color: #ddd; border-radius: .4rem; overflow: auto; max-height: 22rem; white-space: pre; font-size: .8rem; }
+    .toolbar { display: flex; gap: .5rem; align-items: center; margin-top: 1rem; }
+  </style>
+</head>
+<body x-data="instances()" x-init="start()">
+  <header>
+    <div>
+      <h1>Lab instances</h1>
+      <div class="summary" x-show="rows.length">
+        <strong x-text="rows.length"></strong> instances ·
+        <strong x-text="count('help')"></strong> need help ·
+        <strong x-text="count('finished')"></strong> finished ·
+        <strong x-text="count('offline')"></strong> offline
+      </div>
+    </div>
+    <div class="toolbar">
+      <button @click="toggleAll()" x-text="allOpen ? 'Hide terminals' : 'Show all terminals'"></button>
+    </div>
+  </header>
+
+  <p class="error" x-show="error" x-text="error"></p>
+  <p class="muted" x-show="!error && rows.length === 0">No instances reported yet.</p>
+
+  <table x-show="rows.length">
+    <thead>
+      <tr><th>Name</th><th>Module</th><th>Unit</th><th>Progress</th><th>Status</th><th>Last seen</th><th></th></tr>
+    </thead>
+    <template x-for="row in sorted" :key="row.instance_id">
+      <tbody>
+        <tr class="row" :class="{ help: row.help, offline: isOffline(row) }" @click="toggle(row.instance_id)">
+          <td x-text="row.name"></td>
+          <td x-text="row.module ?? '-'"></td>
+          <td x-text="row.unit ?? '-'"></td>
+          <td>
+            <div class="bar" :class="{ done: row.finished }">
+              <div class="track"><div class="fill" :style="'width:' + percent(row) + '%'"></div></div>
+              <span class="muted" x-text="stepLabel(row)"></span>
+            </div>
+          </td>
+          <td><span class="badge" :class="statusClass(row)" x-text="status(row)"></span></td>
+          <td class="muted" x-text="seen(row)"></td>
+          <td>
+            <button x-show="row.help" @click.stop="ack(row.instance_id)">Acknowledge</button>
+          </td>
+        </tr>
+        <tr x-show="isOpen(row.instance_id)">
+          <td class="term" colspan="7">
+            <pre class="term" x-text="row.screen || '(no output)'"
+                 x-effect="row.screen; $nextTick(() => { $el.scrollTop = $el.scrollHeight })"></pre>
+          </td>
+        </tr>
+      </tbody>
+    </template>
+  </table>
+
+  <script>
+    // Seconds without a report before an instance counts as offline
+    const OFFLINE_AFTER = 15
+
+    function instances() {
+      return {
+        rows: [],
+        error: null,
+        open: {},
+        allOpen: false,
+        now: Date.now() / 1000,
+        start() {
+          this.load()
+          setInterval(() => this.load(), 2000)
+        },
+        async load() {
+          try {
+            const res = await fetch('/api/instances')
+            if (!res.ok) throw new Error('HTTP ' + res.status)
+            this.rows = Object.entries(await res.json()).map(([id, v]) => ({ ...v, instance_id: id }))
+            this.now = Date.now() / 1000
+            this.error = null
+          } catch (e) {
+            this.error = 'Failed to load instances: ' + e.message
+          }
+        },
+        get sorted() {
+          const rank = (r) => (r.help ? 0 : this.isOffline(r) ? 2 : 1)
+          return [...this.rows].sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name))
+        },
+        isOffline(row) {
+          return !row.last_seen || this.now - row.last_seen > OFFLINE_AFTER
+        },
+        count(kind) {
+          if (kind === 'offline') return this.rows.filter((r) => this.isOffline(r)).length
+          return this.rows.filter((r) => r[kind]).length
+        },
+        status(row) {
+          if (row.help) return 'Needs help'
+          if (this.isOffline(row)) return 'Offline'
+          if (row.finished) return 'Finished'
+          if (row.started) return 'In progress'
+          return 'Waiting'
+        },
+        statusClass(row) {
+          if (row.help) return 'help'
+          if (this.isOffline(row)) return 'offline'
+          if (row.finished) return 'done'
+          return row.started ? 'progress' : 'waiting'
+        },
+        stepLabel(row) {
+          if (!row.started) return '-'
+          return row.total_steps ? row.step + '/' + row.total_steps : String(row.step ?? '-')
+        },
+        percent(row) {
+          if (row.finished) return 100
+          if (!row.started || !row.total_steps) return 0
+          // The step shown is the one in progress, so it is not counted as done yet
+          return Math.round(((row.step - 1) / row.total_steps) * 100)
+        },
+        seen(row) {
+          if (!row.last_seen) return '-'
+          return Math.max(0, Math.round(this.now - row.last_seen)) + 's ago'
+        },
+        isOpen(id) {
+          return this.allOpen || !!this.open[id]
+        },
+        toggle(id) {
+          this.open[id] = !this.open[id]
+        },
+        toggleAll() {
+          this.allOpen = !this.allOpen
+        },
+        async ack(id) {
+          const res = await fetch('/api/ack/' + encodeURIComponent(id), { method: 'POST' })
+          if (res.ok) this.load()
+        },
+      }
+    }
+  </script>
+</body>
+</html>

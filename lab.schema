@@ -1,0 +1,447 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/lab-task.schema.json",
+  "title": "Lab task definition",
+  "description": "A lab task: ordered steps, each with instructions, hints and checks.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "id", "title", "steps"],
+  "properties": {
+    "schema": {
+      "description": "Schema version. Bump when the check vocabulary changes incompatibly.",
+      "const": 1
+    },
+    "id": { "$ref": "#/$defs/identifier" },
+    "title": { "type": "string", "minLength": 1 },
+    "module": {"type": "integer"},
+    "unit": {"type": "integer"},
+    "description": { "$ref": "#/$defs/content" },
+    "progression": {
+      "description": "linear: a step unlocks when the previous step's required checks pass. free: any order. Per-step 'requires' overrides either.",
+      "enum": ["linear", "free"],
+      "default": "linear"
+    },
+    "vars": {
+      "description": "Static, load-time ${name} substitution in strings. No expressions, no logic. Runtime values use ${captured.name} instead.",
+      "type": "object",
+      "propertyNames": { "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$" },
+      "additionalProperties": {
+        "type": ["string", "number", "boolean"]
+      }
+    },
+    "setup": {
+      "description": "Commands run once before the learner starts.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/setupCommand" }
+    },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/step" }
+    },
+    "final_checks": {
+      "description": "Task-level checks run after all steps, e.g. end-to-end verification.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/check" }
+    }
+  },
+
+  "$defs": {
+    "identifier": {
+      "description": "Stable ID. Referenced by progress records and analytics, so never rename once published. Uniqueness within a task is enforced by the loader, not by this schema.",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*$",
+      "maxLength": 64
+    },
+
+    "numberOrRef": {
+      "description": "A number, or a reference to a numeric capture such as ${captured.orders_before}. Resolved at runtime.",
+      "oneOf": [
+        { "type": "number" },
+        {
+          "type": "string",
+          "pattern": "^\\$\\{captured\\.[a-z][a-z0-9_]*\\}$"
+        }
+      ]
+    },
+
+    "capture": {
+      "description": "Extract a value from a command's result for use in later instructions, commands and assertions as ${captured.<name>}. Setup captures are committed when the command exits 0; check captures only when the check passes.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from"],
+      "properties": {
+        "from": {
+          "enum": ["stdout", "stderr", "exit_code", "file"]
+        },
+        "file": {
+          "description": "Path to read when from is 'file'.",
+          "type": "string",
+          "minLength": 1
+        },
+        "json": {
+          "description": "JSONPath to extract from the source parsed as JSON.",
+          "type": "string",
+          "pattern": "^\\$"
+        },
+        "regex": {
+          "description": "Extract the first capture group of the first match.",
+          "type": "string"
+        },
+        "type": {
+          "enum": ["string", "int", "number", "bool"],
+          "default": "string"
+        },
+        "trim": { "type": "boolean", "default": true },
+        "secret": {
+          "description": "Never shown to the learner, echoed in feedback, or logged. Loader rejects references from instructions, hints and feedback.",
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "from": { "const": "file" } },
+            "required": ["from"]
+          },
+          "then": { "required": ["file"] },
+          "else": { "not": { "required": ["file"] } }
+        },
+        { "not": { "required": ["json", "regex"] } },
+        {
+          "if": {
+            "properties": { "from": { "const": "exit_code" } },
+            "required": ["from"]
+          },
+          "then": {
+            "not": {
+              "anyOf": [{ "required": ["json"] }, { "required": ["regex"] }]
+            }
+          }
+        }
+      ]
+    },
+
+    "captureMap": {
+      "description": "Map of capture name to definition. Names are unique across the whole task.",
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "pattern": "^[a-z][a-z0-9_]*$" },
+      "additionalProperties": { "$ref": "#/$defs/capture" }
+    },
+
+    "duration": {
+      "description": "e.g. 30s, 5m, 1h",
+      "type": "string",
+      "pattern": "^[0-9]+(s|m|h)$"
+    },
+
+    "content": {
+      "description": "Inline text, or a reference to a Markdown file relative to the task file.",
+      "oneOf": [
+        { "type": "string", "minLength": 1 },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["file"],
+          "properties": {
+            "file": { "type": "string", "minLength": 1 }
+          }
+        }
+      ]
+    },
+
+    "execution": {
+      "description": "Shared execution context for anything that runs a command.",
+      "type": "object",
+      "properties": {
+        "cwd": { "type": "string" },
+        "env": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "timeout": { "$ref": "#/$defs/duration" },
+        "target": {
+          "description": "Which machine or container runs the command. Names are defined by your runner.",
+          "type": "string"
+        },
+        "as_user": {
+          "description": "User to run as, so checks can read files the learner cannot.",
+          "type": "string"
+        }
+      }
+    },
+
+    "setupCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run"],
+      "properties": {
+        "run": { "type": "string", "minLength": 1 },
+        "cwd": { "type": "string" },
+        "env": { "type": "object", "additionalProperties": { "type": "string" } },
+        "timeout": { "$ref": "#/$defs/duration" },
+        "target": { "type": "string" },
+        "as_user": { "type": "string" },
+        "capture": { "$ref": "#/$defs/captureMap" }
+      }
+    },
+
+    "normalise": {
+      "description": "Explicit, per-matcher leniency for output comparison.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "trim": { "type": "boolean", "default": true },
+        "ignore_case": { "type": "boolean", "default": false },
+        "collapse_whitespace": { "type": "boolean", "default": false },
+        "sort_lines": { "type": "boolean", "default": false }
+      }
+    },
+
+    "textMatcher": {
+      "description": "Assertions against a text stream. All listed assertions must hold.",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "equals": { "type": "string" },
+        "contains": { "type": "string" },
+        "not_contains": { "type": "string" },
+        "starts_with": { "type": "string" },
+        "matches": {
+          "description": "Regular expression (dialect defined by your runner).",
+          "type": "string"
+        },
+        "not_matches": { "type": "string" },
+        "is_empty": { "type": "boolean" },
+        "line_count": { "$ref": "#/$defs/numberComparison" },
+        "normalise": { "$ref": "#/$defs/normalise" }
+      }
+    },
+
+    "numberComparison": {
+      "description": "Either an exact integer or a comparison object.",
+      "oneOf": [
+        { "type": "integer" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "eq": { "$ref": "#/$defs/numberOrRef" },
+            "gt": { "$ref": "#/$defs/numberOrRef" },
+            "gte": { "$ref": "#/$defs/numberOrRef" },
+            "lt": { "$ref": "#/$defs/numberOrRef" },
+            "lte": { "$ref": "#/$defs/numberOrRef" }
+          }
+        }
+      ]
+    },
+
+    "jsonAssertion": {
+      "description": "Assert on a value in JSON output, located by JSONPath.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path"],
+      "properties": {
+        "path": { "type": "string", "pattern": "^\\$" },
+        "exists": { "type": "boolean" },
+        "equals": {},
+        "not_equals": {},
+        "contains": {},
+        "matches": { "type": "string" },
+        "gt": { "$ref": "#/$defs/numberOrRef" },
+        "gte": { "$ref": "#/$defs/numberOrRef" },
+        "lt": { "$ref": "#/$defs/numberOrRef" },
+        "lte": { "$ref": "#/$defs/numberOrRef" },
+        "length": { "$ref": "#/$defs/numberComparison" },
+        "type": {
+          "enum": ["string", "number", "boolean", "array", "object", "null"]
+        }
+      },
+      "anyOf": [
+        { "required": ["exists"] },
+        { "required": ["equals"] },
+        { "required": ["not_equals"] },
+        { "required": ["contains"] },
+        { "required": ["matches"] },
+        { "required": ["gt"] },
+        { "required": ["gte"] },
+        { "required": ["lt"] },
+        { "required": ["lte"] },
+        { "required": ["length"] },
+        { "required": ["type"] }
+      ]
+    },
+
+    "fileAssertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "exists": { "type": "boolean", "default": true },
+        "contains": { "type": "string" },
+        "not_contains": { "type": "string" },
+        "matches": { "type": "string" },
+        "mode": {
+          "description": "Octal permission string, e.g. \"0644\".",
+          "type": "string",
+          "pattern": "^[0-7]{3,4}$"
+        },
+        "owner": { "type": "string" }
+      }
+    },
+
+    "expect": {
+      "description": "Assertions about a command's observable result. All listed assertions must hold.",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "exit_code": {
+          "oneOf": [
+            { "type": "integer", "minimum": 0, "maximum": 255 },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["not"],
+              "properties": {
+                "not": { "type": "integer", "minimum": 0, "maximum": 255 }
+              }
+            }
+          ]
+        },
+        "stdout": { "$ref": "#/$defs/textMatcher" },
+        "stderr": { "$ref": "#/$defs/textMatcher" },
+        "json": {
+          "description": "Parse stdout as JSON, then run every assertion.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/jsonAssertion" }
+        },
+        "files": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/fileAssertion" }
+        }
+      }
+    },
+
+    "feedbackRule": {
+      "description": "Targeted feedback for a known mistake. First matching rule wins.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["when", "message"],
+      "properties": {
+        "when": { "$ref": "#/$defs/expect" },
+        "message": { "type": "string", "minLength": 1 }
+      }
+    },
+
+    "check": {
+      "allOf": [{ "$ref": "#/$defs/execution" }],
+      "type": "object",
+      "unevaluatedProperties": false,
+      "required": ["id", "run", "expect"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "description": { "type": "string" },
+        "run": {
+          "description": "Shell command, or a path to a check script whose exit code or JSON output is the verdict.",
+          "type": "string",
+          "minLength": 1
+        },
+        "expect": { "$ref": "#/$defs/expect" },
+        "capture": { "$ref": "#/$defs/captureMap" },
+        "feedback_on_fail": {
+          "description": "Default message shown when the check fails.",
+          "type": "string"
+        },
+        "feedback_rules": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/feedbackRule" }
+        },
+        "required": {
+          "description": "If false, the check gives feedback but does not block progress.",
+          "type": "boolean",
+          "default": true
+        },
+        "regression": {
+          "description": "If true, re-run on every later step to catch learners breaking earlier fixes.",
+          "type": "boolean",
+          "default": false
+        },
+        "depends_on": {
+          "description": "IDs of checks in the same step (or same final_checks list). Skipped if any fail. Cross-step ordering is handled by step gating.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/identifier" },
+          "uniqueItems": true
+        }
+      }
+    },
+
+    "hint": {
+      "description": "A hint with an optional reveal rule. With no rule, the hint is available immediately.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "text": { "type": "string", "minLength": 1 },
+        "reveal_after": {
+          "description": "Reveal after this much time on the step.",
+          "$ref": "#/$defs/duration"
+        },
+        "after_failed_attempts": {
+          "description": "Reveal after this many failed check runs on the step.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "reveal": {
+          "description": "on_request: only when the learner asks.",
+          "const": "on_request"
+        }
+      },
+      "allOf": [
+        { "not": { "required": ["reveal_after", "after_failed_attempts"] } },
+        { "not": { "required": ["reveal_after", "reveal"] } },
+        { "not": { "required": ["after_failed_attempts", "reveal"] } }
+      ]
+    },
+
+    "step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "instructions"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "title": { "type": "string", "minLength": 1 },
+        "instructions": { "$ref": "#/$defs/content" },
+        "hints": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/hint" }
+        },
+        "checks": {
+          "description": "A step with no checks is informational and passes when the learner advances.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/check" }
+        },
+        "requires": {
+          "description": "Step IDs that must be passed first. Overrides the task's progression policy.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/identifier" },
+          "uniqueItems": true
+        },
+        "setup": {
+          "description": "Run when the step is entered, to put the environment in a known state. Should be idempotent.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/setupCommand" }
+        }
+      }
+    }
+  }
+}
