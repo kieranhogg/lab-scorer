@@ -1,19 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-sudo snap install astral-uv
-lab_files=${1:?usage: curl -sL <raw url> | sudo bash -s -- labs/cli}
-    repo=/opt/lab-scorer
-    [ "$EUID" -eq 0 ] || { echo "Run as root" >&2; exit 1; }
+if ! command -v uv >/dev/null && ! snap list astral-uv >/dev/null 2>&1; then
+    snap install astral-uv --classic
+fi
 
-    command -v git >/dev/null || apt-get install -y git
-    if [ -d "$repo/.git" ]; then
-        git -C "$repo" pull --ff-only
-    else
-        git clone --depth 1 https://github.com/kieranhogg/lab-scorer.git "$repo"
-    fi
-    cd "$repo"
-    [ -d "$repo/$lab_files" ] || { echo "No such lab folder: $lab_files" >&2; exit 1; }
+lab_files=${1:?usage: curl -sL <raw url> | sudo bash -s -- labs/cli}
+repo=/opt/lab-scorer
+[ "$EUID" -eq 0 ] || { echo "Run as root" >&2; exit 1; }
+
+command -v git >/dev/null || apt-get install -y git
+if [ -d "$repo/.git" ]; then
+    git -C "$repo" pull --ff-only
+else
+    git clone --depth 1 https://github.com/kieranhogg/lab-scorer.git "$repo"
+fi
+cd "$repo"
+[ -d "$repo/$lab_files" ] || { echo "No such lab folder: $lab_files" >&2; exit 1; }
 
 export UV_PYTHON_INSTALL_DIR=/opt/python
 export UV_TOOL_DIR=/opt/uv-tools
