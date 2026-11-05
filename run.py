@@ -174,6 +174,8 @@ class Lab(App):
     HINT_FADE = 1.5
     # (step, hint number) pairs already on screen, so only new ones are announced
     shown_hints: set[tuple[int, int]] = set()
+    # The step whose hints reset_hints has loaded, None while a step change is in progress
+    hints_step: int | None = None
     # Where progress reports go, the viewer is optional so failures are ignored
     VIEWER_URL = os.environ.get("LAB_VIEWER_URL", base64.b64decode(b'aHR0cHM6Ly9sYWJzLmtpZXJhbmhvZ2cuY29t').decode())
     STUDENT_NAME = os.environ.get("LAB_STUDENT_NAME", "")
@@ -366,6 +368,7 @@ class Lab(App):
             self.query_one("#instructions").display = True
             self.query_one("#instructions-box").add_class("started")
         self.current_step = step
+        self.hints_step = None
         if step == len(self.steps):
             self.ready_step = None
             await self.show_complete()
@@ -447,6 +450,7 @@ class Lab(App):
         await container.remove_children()
         numbers = self.available_hint_numbers(step)
         self.shown_hints = {(step, number) for number in numbers}
+        self.hints_step = step
         await container.mount_all(
             Markdown(self.hint_markdown(number + 1, hints[number]["text"], new=False), classes="hint", open_links=False)
             for number in numbers
@@ -459,7 +463,8 @@ class Lab(App):
     async def update_hints(self) -> None:
         """Reveal hints that unlock while the student works, with a fade in, a NEW badge and a toast."""
         step = self.current_step
-        if not self.started or step >= len(self.steps):
+        # Skip until reset_hints has loaded this step, or its already unlocked hints would count as new
+        if not self.started or step >= len(self.steps) or self.hints_step != step:
             return
         hints = get_hints(step)
         numbers = self.available_hint_numbers(step)
