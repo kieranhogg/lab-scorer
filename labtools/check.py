@@ -234,6 +234,11 @@ def failure_message(check, result) -> str:
     return fill_captured(check.get("feedback_on_fail") or "Check failed")
 
 
+def fail_style(check) -> tuple[str, str]:
+    """Return the title label and border colour for a failed check. Optional checks are softer than required ones."""
+    return ("⚠ OPTIONAL", "yellow") if not is_required(check) else ("✗ FAIL", "red")
+
+
 def failure_panel(check, result, note: str = "") -> Panel:
     body = Text(failure_message(check, result), style="bold")
     if note:
@@ -243,11 +248,12 @@ def failure_panel(check, result, note: str = "") -> Panel:
         if output:
             body.append("\n\n")
             body.append("\n".join(output), style="dim")
+    label, colour = fail_style(check)
     return Panel(
         body,
-        title=f"[bold]✗ FAIL[/bold] {escape(str(check.get('description')))}",
+        title=f"[bold]{label}[/bold] {escape(str(check.get('description')))}",
         title_align="left",
-        border_style="red",
+        border_style=colour,
     )
 
 def execute(check) -> subprocess.CompletedProcess:
@@ -282,8 +288,9 @@ def meets_expectations(check, result) -> bool:
     return expectations_met(check["expect"], result, check_directory(check))
 
 
-def panel(message: str, description: str) -> Panel:
-    return Panel(message, title=f"[bold]✗ FAIL[/bold] {description}", title_align="left", border_style="red")
+def panel(message: str, description: str, check) -> Panel:
+    label, colour = fail_style(check)
+    return Panel(message, title=f"[bold]{label}[/bold] {description}", title_align="left", border_style=colour)
 
 
 def run_check(check, prefix: str = "", commit: bool = True, note: str = "") -> bool:
@@ -299,10 +306,10 @@ def run_check(check, prefix: str = "", commit: bool = True, note: str = "") -> b
         try:
             result = execute(check)
         except FileNotFoundError:
-            console.print(panel(f"The lab folder {LAB_HOME} does not exist. Set LAB_HOME to the lab folder.", description))
+            console.print(panel(f"The lab folder {LAB_HOME} does not exist. Set LAB_HOME to the lab folder.", description, check))
             return False
         except subprocess.TimeoutExpired:
-            console.print(panel(f"Timed out after {timeout_seconds(timeout)} seconds. Check for an infinite loop.", description))
+            console.print(panel(f"Timed out after {timeout_seconds(timeout)} seconds. Check for an infinite loop.", description, check))
             return False
     if not meets_expectations(check, result):
         console.print(failure_panel(check, result, note))
@@ -311,7 +318,7 @@ def run_check(check, prefix: str = "", commit: bool = True, note: str = "") -> b
         try:
             save_captured(extract_values(check["capture"], result, check_directory(check)))
         except ValueError as error:
-            console.print(panel(escape(str(error)), description))
+            console.print(panel(escape(str(error)), description, check))
             return False
     console.print(f"[green bold]✓ PASS[/green bold] {description}")
     return True
