@@ -544,7 +544,7 @@ class Lab(App):
                 return
             executable = shutil.which("code") or CODE_SNAP
         try:
-            self.notify("Opening VS Code, hang on!", timeout=10)
+            self.notify("Opening VS Code, hang on! If it doesn't load `code .` opens it.", timeout=10)
             subprocess.Popen(
                 [executable, str(self.LAB_HOME)],
                 env=self.clean_env(),
