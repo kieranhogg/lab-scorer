@@ -34,6 +34,15 @@ def test_setup_run_executes_a_shell_command(home, lab_file):
     assert (home / "ran-inline").exists()
 
 
+def test_setup_keeps_going_after_a_failure_then_raises(home, tmp_path, lab_file):
+    (tmp_path / "bad.sh").write_text("exit 3\n")
+    lab_file("setup:\n  - script: bad.sh\n  - run: touch ran-after\nsteps: []\n")
+    with pytest.raises(subprocess.CalledProcessError):
+        task.setup_lab()
+    assert (home / "ran-after").exists()
+    assert not task.SETUP_MARKER.exists()
+
+
 def test_lab_without_setup_is_fine(home, lab_file):
     lab_file("steps: []\n")
     task.setup_lab()
