@@ -10,13 +10,13 @@ from pathlib import Path
 import yaml
 
 from labtools.check import TEXT_RULES
+from labtools.command import CAPTURE_NAME, CAPTURE_REF
 from labtools.task import DEFAULT_LAB_FILE, find_script
 
 ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 DURATION_PATTERN = re.compile(r"^[0-9]+[smh]$")
-CAPTURE_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
+CAPTURE_NAME_PATTERN = re.compile(rf"^{CAPTURE_NAME}$")
 VAR_NAME_PATTERN = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
-CAPTURE_REF_PATTERN = re.compile(r"\$\{captured\.([a-z][a-z0-9_]*)\}")
 MODE_PATTERN = re.compile(r"^[0-7]{3,4}$")
 
 EXPECT_KEYS = {"exit_code", "stdout", "stderr", "json", "files"}
@@ -55,7 +55,7 @@ def _number_or_ref(where: str, name: str, value, known: set[str]) -> list[str]:
     """A number, or ${captured.name} naming a capture defined somewhere in the lab."""
     if _is_number(value):
         return []
-    match = CAPTURE_REF_PATTERN.fullmatch(value) if isinstance(value, str) else None
+    match = CAPTURE_REF.fullmatch(value) if isinstance(value, str) else None
     if not match:
         return [f"{where}: {name} must be a number or a ${{captured.name}} reference"]
     if match[1] not in known:
@@ -223,7 +223,7 @@ def _secret_problems(where: str, text, secrets: set[str]) -> list[str]:
     """Learner facing text must not mention a secret capture."""
     if not isinstance(text, str):
         return []
-    return [f"{where}: shows secret capture {name} to the learner" for name in CAPTURE_REF_PATTERN.findall(text) if name in secrets]
+    return [f"{where}: shows secret capture {name} to the learner" for name in CAPTURE_REF.findall(text) if name in secrets]
 
 
 def _check_problems(where: str, check: dict, known: set[str], secrets: set[str], siblings: set[str]) -> list[str]:

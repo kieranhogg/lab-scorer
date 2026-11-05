@@ -1,3 +1,4 @@
+import functools
 import logging
 import os
 import re
@@ -13,7 +14,7 @@ from labtools.state import LAB_HOME, read_passed, save_captured, write_step
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_LAB_FILE = "/opt/lab/lab.yml"
+DEFAULT_LAB_FILE = "./labs/example/lab.yml"
 # Setup scripts missing next to the lab file are looked up here, which is the repo root.
 LAB_DIR = Path(os.environ.get("LAB_DIR", Path(__file__).parent.parent))
 SETUP_MARKER = LAB_HOME / ".setup-done"
@@ -50,21 +51,29 @@ def apply_vars(node, variables: dict):
     return node
 
 
+@functools.lru_cache(maxsize=8)
+def _load_lab(path: Path, mtime_ns: int):
+    """Parse a lab file. The modified time is part of the cache key, so an edited file is read again."""
+    with open(path) as lab_file:
+        lab = yaml.safe_load(lab_file)
+    if isinstance(lab, dict) and isinstance(lab.get("vars"), dict):
+        lab = {key: value if key == "vars" else apply_vars(value, lab["vars"]) for key, value in lab.items()}
+    return lab
+
+
 def open_lab_file():
     """Load the lab definition, from LAB_FILE if set (used by tests and local runs).
 
+    The result is shared between calls while the file is unchanged, so callers must not modify it.
     Raises FileNotFoundError with a hint when the file is missing, so a misconfigured VM
     fails loudly instead of showing the student an empty lab.
     """
     path = lab_path()
     try:
-        with open(path) as lab_file:
-            lab = yaml.safe_load(lab_file)
+        mtime_ns = path.stat().st_mtime_ns
     except FileNotFoundError:
         raise FileNotFoundError(f"Lab file {path} not found. Set LAB_FILE to the lab definition.") from None
-    if isinstance(lab, dict) and isinstance(lab.get("vars"), dict):
-        lab = {key: value if key == "vars" else apply_vars(value, lab["vars"]) for key, value in lab.items()}
-    return lab
+    return _load_lab(path, mtime_ns)
 
 
 def content_text(value) -> str:
@@ -120,11 +129,6 @@ def get_lab():
 def get_lab_user() -> str | None:
     """Return the account the terminal should run as, or None to stay as the current user."""
     return open_lab_file().get("user")
-
-def get_checks():
-    """Return the list of checks for each step, None where a step has none."""
-    return [step.get("checks") for step in get_lab()]
-
 
 def get_hints(step: int) -> list[dict]:
     """Return the hints for one step index, or an empty list if it has none."""

@@ -6,14 +6,34 @@ Counters, pass marks and the time a step was first entered are keyed by the step
 Values captured by setup commands live in a second file, because the step file is wiped each time the app starts
 and setup only runs once.
 """
+import fcntl
 import json
 import os
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 LAB_HOME = Path(os.environ.get("LAB_HOME", Path.home() / "lab")).resolve()
 STEP_FILE = Path(os.environ.get("LAB_STEP_FILE", LAB_HOME / ".lab_step"))
 CWD_FILE = LAB_HOME / ".student_cwd"
+NOT_STARTED = "Type `start` to begin the lab."
+
+
+@contextmanager
+def _locked():
+    """Hold an exclusive lock for one read, change and save of the state files.
+
+    The app and the lab commands write the same files from different processes, so without
+    this one can overwrite the other's update. The lock is taken on the folder itself, which
+    anyone who can read it can lock, so it works whichever account created the step file.
+    """
+    fd = os.open(STEP_FILE.parent, os.O_RDONLY)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)
+
 
 def read_cwd() -> str:
     """Return the student's last prompt directory, or LAB_HOME before the first prompt."""
@@ -70,19 +90,29 @@ def is_started() -> bool:
     return bool(read_state().get("started"))
 
 
+def require_started(console) -> bool:
+    """Print the not started message and return False when the student has not started the lab."""
+    if is_started():
+        return True
+    console.print(NOT_STARTED)
+    return False
+
+
 def start() -> None:
-    data = read_state()
-    data["started"] = True
-    data.setdefault("entered", {}).setdefault("0", time.time())
-    _save(data)
+    with _locked():
+        data = read_state()
+        data["started"] = True
+        data.setdefault("entered", {}).setdefault("0", time.time())
+        _save(data)
 
 
 def write_step(step: int) -> None:
-    data = read_state()
-    data["step"] = step
-    # Only the first visit counts, so going back never relocks a hint that timed out
-    data.setdefault("entered", {}).setdefault(str(step), time.time())
-    _save(data)
+    with _locked():
+        data = read_state()
+        data["step"] = step
+        # Only the first visit counts, so going back never relocks a hint that timed out
+        data.setdefault("entered", {}).setdefault(str(step), time.time())
+        _save(data)
 
 
 def read_step_seconds() -> float:
@@ -94,18 +124,20 @@ def read_step_seconds() -> float:
 
 def record_pass(step: int) -> None:
     """Mark a step as passed. Going back and passing again changes nothing."""
-    data = read_state()
-    data.setdefault("passed", {})[str(step)] = True
-    _save(data)
+    with _locked():
+        data = read_state()
+        data.setdefault("passed", {})[str(step)] = True
+        _save(data)
 
 
 def _bump(counter: str) -> int:
-    data = read_state()
-    counts = data.setdefault(counter, {})
-    key = str(data.get("step", 0))
-    counts[key] = counts.get(key, 0) + 1
-    _save(data)
-    return counts[key]
+    with _locked():
+        data = read_state()
+        counts = data.setdefault(counter, {})
+        key = str(data.get("step", 0))
+        counts[key] = counts.get(key, 0) + 1
+        _save(data)
+        return counts[key]
 
 
 def record_check() -> int:
@@ -124,9 +156,10 @@ def read_help() -> bool:
 
 def set_help(requested: bool) -> None:
     """Raise or clear the help flag the viewer shows to the instructor."""
-    data = read_state()
-    data["help"] = requested
-    _save(data)
+    with _locked():
+        data = read_state()
+        data["help"] = requested
+        _save(data)
 
 
 def read_student() -> dict:
@@ -136,9 +169,10 @@ def read_student() -> dict:
 
 
 def set_student(name: str, editor: str) -> None:
-    data = read_state()
-    data["student"] = {"name": name, "editor": editor}
-    _save(data)
+    with _locked():
+        data = read_state()
+        data["student"] = {"name": name, "editor": editor}
+        _save(data)
 
 
 def _setup_captures_file() -> Path:
@@ -156,11 +190,13 @@ def save_captured(values: dict, setup: bool = False) -> None:
     if setup:
         path = _setup_captures_file()
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps({**read_captured_setup(), **values}))
+        with _locked():
+            path.write_text(json.dumps({**read_captured_setup(), **values}))
         return
-    data = read_state()
-    data.setdefault("captured", {}).update(values)
-    _save(data)
+    with _locked():
+        data = read_state()
+        data.setdefault("captured", {}).update(values)
+        _save(data)
 
 
 def read_captured_setup() -> dict:

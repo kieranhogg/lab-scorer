@@ -4,6 +4,7 @@ Captured values are available to later commands as ${captured.name}. In a shell 
 the reference becomes a shell variable, so a value is never parsed as extra commands.
 Wrap it in double quotes like any shell variable, otherwise a value with spaces is split into words.
 """
+import json
 import os
 import re
 import subprocess
@@ -14,7 +15,8 @@ from labtools.state import read_captured, read_cwd
 
 DEFAULT_TIMEOUT = 30
 DURATION_SECONDS = {"s": 1, "m": 60, "h": 3600}
-CAPTURE_REF = re.compile(r"\$\{captured\.([a-z][a-z0-9_]*)\}")
+CAPTURE_NAME = r"[a-z][a-z0-9_]*"
+CAPTURE_REF = re.compile(rf"\$\{{captured\.({CAPTURE_NAME})\}}")
 RUNUSER = "/usr/sbin/runuser"
 TRUE_WORDS = {"true", "1", "yes", "y"}
 FALSE_WORDS = {"false", "0", "no", "n", ""}
@@ -99,7 +101,7 @@ def extract_value(capture: dict, result: subprocess.CompletedProcess, home: Path
     if capture.get("trim", True):
         raw = raw.strip()
     if "json" in capture:
-        found, raw = jsonpath.lookup(jsonpath.loads(raw), capture["json"])
+        found, raw = jsonpath.lookup(json.loads(raw), capture["json"])
         if not found:
             raise ValueError(f"{capture['json']} not found in the JSON")
     elif "regex" in capture:

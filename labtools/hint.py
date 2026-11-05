@@ -8,13 +8,12 @@ the student has asked with the `hint` command.
 from rich.console import Console
 
 from labtools.command import timeout_seconds
-from labtools.start import NOT_STARTED
 from labtools.state import (
-    is_started,
     read_checks,
     read_step,
     read_step_seconds,
     record_hint,
+    require_started,
 )
 from labtools.task import get_hints
 
@@ -38,8 +37,7 @@ def available_indices(hints: list[dict], attempts: int, seconds: float, requeste
 
 
 def main() -> None:
-    if not is_started():
-        console.print(NOT_STARTED)
+    if not require_started(console):
         return
     hints = get_hints(read_step())
     if not hints:

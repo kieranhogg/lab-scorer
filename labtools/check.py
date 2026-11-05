@@ -10,12 +10,12 @@ from pathlib import Path
 
 from rich.console import Console
 from rich.markup import escape
-from rich.padding import Padding
 from rich.panel import Panel
 from rich.text import Text
 
 from labtools import jsonpath
 from labtools.command import (
+    CAPTURE_REF,
     DEFAULT_TIMEOUT,
     extract_values,
     fill_captured,
@@ -23,19 +23,17 @@ from labtools.command import (
     shell_refs,
     timeout_seconds,
 )
-from labtools.start import NOT_STARTED
 from labtools.state import (
     LAB_HOME,
-    is_started,
     read_captured,
     read_step,
     record_check,
     record_pass,
+    require_started,
     save_captured,
 )
 from labtools.task import (
     enter_step,
-    get_checks,
     get_lab,
     open_lab_file,
     unmet_requirements,
@@ -55,8 +53,6 @@ NUMBER_COMPARISONS = {"eq": operator.eq, **{name: COMPARISONS[name] for name in 
 TEXT_RULES = {
     *COMPARISONS, "contains", "not_contains", "starts_with", "matches", "not_matches", "is_empty", "line_count", "normalise",
 }
-STDOUT_RULES = TEXT_RULES
-CAPTURE_REF = re.compile(r"^\$\{captured\.([a-z][a-z0-9_]*)\}$")
 MAX_LINES = 10
 
 console = Console()
@@ -64,7 +60,7 @@ console = Console()
 
 def _limit(wanted):
     """Resolve a number, or a ${captured.name} reference to a numeric capture. None if it is not a number."""
-    if isinstance(wanted, str) and (ref := CAPTURE_REF.match(wanted)):
+    if isinstance(wanted, str) and (ref := CAPTURE_REF.fullmatch(wanted)):
         wanted = read_captured().get(ref[1])
     return wanted if isinstance(wanted, (int, float)) and not isinstance(wanted, bool) else None
 
@@ -131,9 +127,6 @@ def text_matches(output: str, rules: dict) -> bool:
         if not ok:
             return False
     return True
-
-
-stdout_matches = text_matches
 
 
 def _json_type(value) -> str:
@@ -239,6 +232,11 @@ def fail_style(check) -> tuple[str, str]:
     return ("⚠ OPTIONAL", "yellow") if not is_required(check) else ("✗ FAIL", "red")
 
 
+def panel(message, description: str, check) -> Panel:
+    label, colour = fail_style(check)
+    return Panel(message, title=f"[bold]{label}[/bold] {description}", title_align="left", border_style=colour)
+
+
 def failure_panel(check, result, note: str = "") -> Panel:
     body = Text(failure_message(check, result), style="bold")
     if note:
@@ -248,13 +246,8 @@ def failure_panel(check, result, note: str = "") -> Panel:
         if output:
             body.append("\n\n")
             body.append("\n".join(output), style="dim")
-    label, colour = fail_style(check)
-    return Panel(
-        body,
-        title=f"[bold]{label}[/bold] {escape(str(check.get('description')))}",
-        title_align="left",
-        border_style=colour,
-    )
+    return panel(body, escape(str(check.get("description"))), check)
+
 
 def execute(check) -> subprocess.CompletedProcess:
     """Run one check command in LAB_HOME and return the finished process.
@@ -286,11 +279,6 @@ def expectations_met(expect: dict, result, base: Path) -> bool:
 def meets_expectations(check, result) -> bool:
     """Return True if the process result satisfies the check's expect block."""
     return expectations_met(check["expect"], result, check_directory(check))
-
-
-def panel(message: str, description: str, check) -> Panel:
-    label, colour = fail_style(check)
-    return Panel(message, title=f"[bold]{label}[/bold] {description}", title_align="left", border_style=colour)
 
 
 def run_check(check, prefix: str = "", commit: bool = True, note: str = "") -> bool:
@@ -384,7 +372,8 @@ def step_groups(step: int) -> list[tuple[list, str, bool]] | None:
     groups = [(steps[step].get("checks") or [], "", True)]
     for number, earlier in enumerate(steps[:step], start=1):
         groups.append((regression_group(earlier.get("checks") or []), f"(step {number}) ", False))
-    if step == len(steps) - 1:
+    last_required = max((n for n, s in enumerate(steps) if not s.get("optional")), default=None)
+    if step == last_required:
         groups.append((open_lab_file().get("final_checks") or [], "(final) ", True))
     groups = [group for group in groups if group[0]]
     return groups or None
@@ -434,12 +423,10 @@ def groups_pass_silently(groups) -> bool:
 
 def main() -> None:
     console.rule(style="dim")
-    if not is_started():
-        console.print(NOT_STARTED)
+    if not require_started(console):
         return
     step = read_step()
-    checks = get_checks()
-    if step >= len(checks):
+    if step >= len(get_lab()):
         console.print("Nothing left to check, you're on the final step.")
         return
 

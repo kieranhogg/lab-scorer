@@ -2,7 +2,6 @@
 
 Supported: $, .key, ['key'], ["key"], [0], [-1], [*] and .*
 """
-import json
 import re
 
 WILDCARD = object()
@@ -47,8 +46,3 @@ def lookup(data, path: str) -> tuple[bool, object]:
     if WILDCARD in steps:
         return bool(nodes), nodes
     return bool(nodes), nodes[0] if nodes else None
-
-
-def loads(text: str):
-    """Parse JSON text, raising ValueError when it is not valid."""
-    return json.loads(text)

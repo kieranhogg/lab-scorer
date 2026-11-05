@@ -6,8 +6,6 @@ from labtools.task import run_step_setup
 
 console = Console()
 
-NOT_STARTED = "Type `start` to begin the lab."
-
 
 def main() -> None:
     if is_started():

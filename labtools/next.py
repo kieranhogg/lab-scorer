@@ -4,19 +4,16 @@ import sys
 from rich.console import Console
 
 from labtools.check import run_groups, step_groups
-from labtools.start import NOT_STARTED
-from labtools.state import is_started, read_step, record_pass
-from labtools.task import enter_step, get_checks, get_progression, unmet_requirements
+from labtools.state import read_step, record_pass, require_started
+from labtools.task import enter_step, get_lab, get_progression, unmet_requirements
 
 console = Console()
 
 def main() -> None:
-    if not is_started():
-        console.print(NOT_STARTED)
+    if not require_started(console):
         return
     step = read_step()
-    checks = get_checks()
-    if step >= len(checks):
+    if step >= len(get_lab()):
         console.print("Nothing to skip, you're at the end!")
         return
 
