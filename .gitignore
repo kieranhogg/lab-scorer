@@ -1,2 +1,5 @@
 node_modules
 .idea
+__pycache__/
+*.pyc
+.venv/

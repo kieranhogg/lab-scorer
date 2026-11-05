@@ -1,1 +1,9 @@
+.git
+.venv
+.idea
+node_modules
+viewer
+.pytest_cache
+.ruff_cache
 __pycache__
+*.pyc
