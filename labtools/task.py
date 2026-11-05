@@ -87,7 +87,8 @@ def setup_lab():
     """Run each setup script once, skipping if a previous run completed.
 
     Scripts must be safe to run twice, since the Docker build and the app start both run them.
-    A failing script raises CalledProcessError so the lab never starts half set up.
+    Every entry runs even if an earlier one fails. The first failure is raised afterwards with no marker
+    written, so the lab never starts half set up and the next start tries again.
     """
     if SETUP_MARKER.exists():
         return
