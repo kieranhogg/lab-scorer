@@ -33,7 +33,7 @@ main() {
     quiet apt-get install -y -qq git curl ca-certificates
 
     if ! command -v uv >/dev/null; then
-        quiet curl -LsSf https://astral.sh/uv/install.sh | UV_UNMANAGED_INSTALL=/usr/local/bin sh
+        curl -LsSf https://astral.sh/uv/install.sh | quiet env UV_UNMANAGED_INSTALL=/usr/local/bin sh
     fi
 
     ### Step 2
