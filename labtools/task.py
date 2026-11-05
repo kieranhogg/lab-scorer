@@ -93,17 +93,23 @@ def setup_lab():
         return
     logger.info("Setting up lab...")
     LAB_HOME.mkdir(parents=True, exist_ok=True)
+    failures = []
     for entry in open_lab_file().get("setup") or []:
         if command := setup_command(entry):
             logger.info(f"Running {entry.get('script') or entry['run']}")
-            # Setup scripts may install packages, so they get no time limit unless the lab sets one
-            result = run_command(entry, command, LAB_HOME, default_timeout=None)
-            sys.stdout.write(result.stdout)
-            sys.stderr.write(result.stderr)
-            if result.returncode != 0:
-                raise subprocess.CalledProcessError(result.returncode, command, result.stdout, result.stderr)
-            if entry.get("capture"):
-                save_captured(extract_values(entry["capture"], result, LAB_HOME), setup=True)
+            try:
+                result = run_command(entry, command, LAB_HOME, default_timeout=None)
+                sys.stdout.write(result.stdout)
+                sys.stderr.write(result.stderr)
+                if result.returncode != 0:
+                    raise subprocess.CalledProcessError(result.returncode, command, result.stdout, result.stderr)
+                if entry.get("capture"):
+                    save_captured(extract_values(entry["capture"], result, LAB_HOME), setup=True)
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
+                logger.error(f"Setup entry failed: {error}")
+                failures.append(error)
+    if failures:
+        raise failures[0]
     SETUP_MARKER.touch()
 
 

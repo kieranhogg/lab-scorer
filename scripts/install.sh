@@ -5,6 +5,14 @@ LAB_USER=labuser
 REPO="https://github.com/kieranhogg/lab-scorer.git"
 LABS_REPO="https://github.com/kieranhoggmv/skill-labs.git"
 APP_DIR=/opt/lab
+LOG=/var/log/lab-install.log
+
+step() { printf '\n==> %s\n' "$*"; }
+
+# Run a command with its output in $LOG, and show the last lines if it fails
+quiet() {
+    "$@" >>"$LOG" 2>&1 || { echo "FAILED: $*" >&2; tail -n 20 "$LOG" >&2; exit 1; }
+}
 
 main() {
     lab_arg=${1:?usage: curl -sL <raw url> | sudo bash -s -- module-X/unit-X}
@@ -18,17 +26,22 @@ main() {
 
     export PATH=$PATH:/snap/bin
     export DEBIAN_FRONTEND=noninteractive
-    apt-get update -qq
-    apt-get install -y -qq git curl ca-certificates
+
+    ### Step 1
+    step "Installing system packages"
+    quiet apt-get update -qq
+    quiet apt-get install -y -qq git curl ca-certificates
 
     if ! command -v uv >/dev/null; then
         curl -LsSf https://astral.sh/uv/install.sh | UV_UNMANAGED_INSTALL=/usr/local/bin sh
     fi
 
+    ### Step 2
+    step "Install lab tool"
     if [ -d "$repo/.git" ]; then
-        git -C "$repo" pull --ff-only
+        quiet git -C "$repo" pull --ff-only
     else
-        git clone --depth 1 "$REPO" "$repo"
+        quiet git clone --depth 1 "$REPO" "$repo"
     fi
     cd "$repo"
 
@@ -46,8 +59,10 @@ main() {
     export UV_TOOL_BIN_DIR=/usr/local/bin
     export LAB_DIR=$repo LAB_HOME=$STUDENT_DIR
 
+    ### Step 3
+    step "Installing Python environment"
     UV_PROJECT_ENVIRONMENT=/opt/venv uv sync --frozen --no-install-project --no-dev
-    uv tool install --force .
+    quiet uv tool install --force .
 
     rm -rf "$APP_DIR"
     mkdir -p "$APP_DIR" "$STUDENT_DIR"
@@ -56,7 +71,8 @@ main() {
         cp -r "$lab_src/files"/. "$STUDENT_DIR"/
     fi
 
-    /opt/venv/bin/python -c "from labtools.task import setup_lab; setup_lab()"
+    step "Running lab setup"
+    /opt/venv/bin/python -c "import logging; logging.basicConfig(level=logging.INFO, format='  %(message)s'); from labtools.task import setup_lab; setup_lab()"
 
     chmod -R a+rX "$APP_DIR"
     chown -R "$LAB_USER": "$STUDENT_DIR"
