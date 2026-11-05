@@ -61,7 +61,7 @@ main() {
 
     ### Step 3
     step "Installing Python environment"
-    quiet UV_PROJECT_ENVIRONMENT=/opt/venv uv sync --frozen --no-install-project --no-dev
+    quiet env UV_PROJECT_ENVIRONMENT=/opt/venv uv sync --frozen --no-install-project --no-dev
     quiet uv tool install --force .
 
     rm -rf "$APP_DIR"
