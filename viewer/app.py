@@ -1,9 +1,13 @@
+import hmac
+import os
+
 import time
 
-from flask import Flask, request
+from flask import Flask, request, Response
 
 app = Flask(__name__, static_folder="static", static_url_path="")
 
+VIEWER_PASSWORD = os.environ.get("VIEWER_PASSWORD")
 # Largest terminal capture kept per instance, in characters
 MAX_SCREEN = 8000
 MAX_TEXT = 100
@@ -14,6 +18,16 @@ app.config["MAX_CONTENT_LENGTH"] = 64 * 1024
 acked = set()
 instances = {}
 
+@app.before_request
+def require_login():
+    if not VIEWER_PASSWORD or request.endpoint == "report":
+        return None
+    auth = request.authorization
+    if auth and hmac.compare_digest(auth.password or "", VIEWER_PASSWORD):
+        return None
+    return Response(
+        "Login required", 401, {"WWW-Authenticate": 'Basic realm="Lab viewer"'}
+    )
 
 def _text(value, limit=MAX_TEXT):
     return None if value is None else str(value)[:limit]
