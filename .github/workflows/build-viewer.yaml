@@ -48,7 +48,7 @@ jobs:
         id: build-and-push
         uses: docker/build-push-action@v7
         with:
-          context: .
+          context: ./viewer
           file: ./viewer/Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
