@@ -33,7 +33,7 @@ main() {
     quiet apt-get install -y -qq git curl ca-certificates
 
     if ! command -v uv >/dev/null; then
-        curl -LsSf https://astral.sh/uv/install.sh | UV_UNMANAGED_INSTALL=/usr/local/bin sh
+        quiet curl -LsSf https://astral.sh/uv/install.sh | UV_UNMANAGED_INSTALL=/usr/local/bin sh
     fi
 
     ### Step 2
@@ -48,8 +48,8 @@ main() {
     if [ ! -d "$lab_src" ]; then
         labs_tmp=$(mktemp -d)
         trap 'rm -rf "$labs_tmp"' EXIT
-        git clone --depth 1 --filter=blob:none --sparse "$LABS_REPO" "$labs_tmp"
-        git -C "$labs_tmp" sparse-checkout set "$lab_arg"
+        quiet git clone --depth 1 --filter=blob:none --sparse "$LABS_REPO" "$labs_tmp"
+        quiet git -C "$labs_tmp" sparse-checkout set "$lab_arg"
         lab_src=$labs_tmp/$lab_arg
     fi
     [ -d "$lab_src" ] || { echo "No such lab folder: $lab_arg" >&2; exit 1; }
@@ -72,7 +72,7 @@ main() {
     fi
 
     step "Running lab setup"
-    /opt/venv/bin/python -c "import logging; logging.basicConfig(level=logging.INFO, format='  %(message)s'); from labtools.task import setup_lab; setup_lab()"
+    quiet /opt/venv/bin/python -c "import logging; logging.basicConfig(level=logging.INFO, format='  %(message)s'); from labtools.task import setup_lab; setup_lab()"
 
     chmod -R a+rX "$APP_DIR"
     chown -R "$LAB_USER": "$STUDENT_DIR"
@@ -95,7 +95,7 @@ main() {
 JSON
 
     if ! command -v code >/dev/null && command -v snap >/dev/null; then
-        snap install code --classic || echo "VS Code install failed, install it by hand" >&2
+        quiet snap install code --classic || echo "VS Code install failed, install it by hand" >&2
     fi
 
     cat > /usr/local/bin/lab <<EOF
