@@ -244,7 +244,9 @@ class Lab(App):
             LAB_STEP_FILE=str(STEP_FILE),
             PROMPT_COMMAND=(
                 'pwd > "$LAB_HOME/.student_cwd"; '
-                '[ -n "$VIRTUAL_ENV" ] || [ ! -f "$LAB_HOME/.venv/bin/activate" ] || . "$LAB_HOME/.venv/bin/activate" && echo "Activated your virtual environment for you (source .venv/bin/activate)"'
+                '[ -n "$_LAB_VENV_DONE" ] || [ ! -f "$LAB_HOME/.venv/bin/activate" ] || '
+                '{ . "$LAB_HOME/.venv/bin/activate"; _LAB_VENV_DONE=1; '
+                'echo "Activated your virtual environment for you (source .venv/bin/activate)"; }'
             ),
         )
         lab_user = get_lab_user()
