@@ -41,8 +41,19 @@ def test_duplicate_ids_and_missing_text():
 
 
 def test_missing_setup_script(tmp_path):
-    bad = lab(GOOD.replace("setup: []", "setup: [{run: nope.sh}]"))
+    bad = lab(GOOD.replace("setup: []", "setup: [{script: nope.sh}]"))
     assert "setup: script nope.sh not found" in validate_lab(bad, tmp_path)
+
+
+def test_setup_entry_needs_exactly_one_of_run_or_script():
+    for entry in ("{}", "{run: a, script: b.sh}"):
+        bad = lab(GOOD.replace("setup: []", f"setup: [{entry}]"))
+        assert "setup: entry needs exactly one of run or script" in validate_lab(bad)
+
+
+def test_setup_run_is_not_looked_up_as_a_file(tmp_path):
+    good = lab(GOOD.replace("setup: []", "setup: [{run: apt-get install -y python3-pip}]"))
+    assert validate_lab(good, tmp_path) == []
 
 
 def test_negative_points_are_reported():

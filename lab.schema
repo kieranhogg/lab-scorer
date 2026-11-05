@@ -176,9 +176,10 @@
     "setupCommand": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["run"],
+      "oneOf": [{ "required": ["run"] }, { "required": ["script"] }],
       "properties": {
-        "run": { "type": "string", "minLength": 1 },
+        "run": { "description": "Shell command.", "type": "string", "minLength": 1 },
+        "script": { "description": "Script file beside the lab file, run with bash.", "type": "string", "minLength": 1 },
         "cwd": { "type": "string" },
         "env": { "type": "object", "additionalProperties": { "type": "string" } },
         "timeout": { "$ref": "#/$defs/duration" },

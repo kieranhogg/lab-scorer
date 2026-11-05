@@ -74,6 +74,15 @@ def content_text(value) -> str:
     return value or ""
 
 
+def setup_command(entry: dict) -> str | None:
+    """Return the shell command for a setup entry: bash on its script, or its run text. None when it has neither."""
+    if script := entry.get("script"):
+        return f"bash {shlex.quote(str(find_script(script)))}"
+    if run := entry.get("run"):
+        return shell_refs(run)
+    return None
+
+
 def setup_lab():
     """Run each setup script once, skipping if a previous run completed.
 
@@ -85,9 +94,8 @@ def setup_lab():
     logger.info("Setting up lab...")
     LAB_HOME.mkdir(parents=True, exist_ok=True)
     for entry in open_lab_file().get("setup") or []:
-        if script := entry.get("run"):
-            logger.info(f"Running {script}")
-            command = f"bash {shlex.quote(str(find_script(script)))}"
+        if command := setup_command(entry):
+            logger.info(f"Running {entry.get('script') or entry['run']}")
             # Setup scripts may install packages, so they get no time limit unless the lab sets one
             result = run_command(entry, command, LAB_HOME, default_timeout=None)
             sys.stdout.write(result.stdout)
@@ -140,7 +148,7 @@ def run_step_setup(step: int) -> None:
         return
     for entry in steps[step].get("setup") or []:
         try:
-            result = run_command(entry, shell_refs(entry["run"]), LAB_HOME)
+            result = run_command(entry, setup_command(entry), LAB_HOME)
             if result.returncode != 0:
                 raise OSError(result.stderr.strip() or f"exit code {result.returncode}")
             if entry.get("capture"):

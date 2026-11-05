@@ -304,10 +304,10 @@ def _content_problems(where: str, value, base_dir: Path | None) -> list[str]:
 def _setup_problems(where: str, entries, base_dir: Path | None, look_for_scripts: bool) -> list[str]:
     problems = []
     for entry in entries or []:
-        script = entry.get("run")
-        if not script:
-            problems.append(f"{where}: entry has no run")
-        elif look_for_scripts and not find_script(script, base_dir).exists():
+        script = entry.get("script")
+        if bool(script) == bool(entry.get("run")):
+            problems.append(f"{where}: entry needs exactly one of run or script")
+        elif script and look_for_scripts and not find_script(script, base_dir).exists():
             problems.append(f"{where}: script {script} not found")
         problems += _execution_problems(where, entry)
         if "capture" in entry:

@@ -332,7 +332,7 @@ def test_setup_captures_survive_the_step_file_being_cleared(step_file, tmp_path,
     monkeypatch.setattr(task, "SETUP_MARKER", home / ".setup-done")
     (tmp_path / "setup.sh").write_text("echo seed=3\n")
     monkeypatch.setattr(task, "LAB_DIR", tmp_path)
-    lab_file("setup:\n  - run: setup.sh\n    capture: {seed: {from: stdout, regex: 'seed=(\\d+)', type: int}}\nsteps: []\n")
+    lab_file("setup:\n  - script: setup.sh\n    capture: {seed: {from: stdout, regex: 'seed=(\\d+)', type: int}}\nsteps: []\n")
     task.setup_lab()
     step_file.unlink(missing_ok=True)
     assert read_captured()["seed"] == 3
@@ -344,7 +344,7 @@ def test_setup_runs_with_env_and_no_default_timeout(tmp_path, lab_file, monkeypa
     monkeypatch.setattr(task, "SETUP_MARKER", home / ".setup-done")
     (tmp_path / "setup.sh").write_text('echo "$GREETING" > greeting\n')
     monkeypatch.setattr(task, "LAB_DIR", tmp_path)
-    lab_file("vars: {g: hi}\nsetup:\n  - run: setup.sh\n    env: {GREETING: '${g}'}\nsteps: []\n")
+    lab_file("vars: {g: hi}\nsetup:\n  - script: setup.sh\n    env: {GREETING: '${g}'}\nsteps: []\n")
     task.setup_lab()
     assert (home / "greeting").read_text() == "hi\n"
 
