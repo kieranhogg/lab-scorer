@@ -167,6 +167,15 @@ def test_required_check_after_failing_optional_still_runs():
     assert check.run_checks(checks) == (False, False)
 
 
+def test_failing_optional_check_is_styled_apart_from_a_required_failure(capsys):
+    check.run_checks(OPTIONAL_FAILS)
+    out = capsys.readouterr().out
+    assert "OPTIONAL" in out
+    assert "FAIL" not in out
+    check.run_checks([{"run": "false", "expect": {"exit_code": 0}}])
+    assert "FAIL" in capsys.readouterr().out
+
+
 def test_all_passing_reports_both_true():
     assert check.run_checks(OPTIONAL_FAILS[:1]) == (True, True)
 

@@ -188,6 +188,25 @@ def test_hints_sit_between_the_title_and_the_instructions(lab_file):
     asyncio.run(scenario())
 
 
+def test_hints_are_not_announced_while_a_step_is_loading(lab_file):
+    lab_file(HINT_LAB)
+    import run
+
+    async def scenario():
+        app = run.Lab()
+        async with app.run_test() as pilot:
+            start()
+            await pilot.pause(1.5)
+            # A step change clears hints_step until reset_hints has loaded the new step
+            app.hints_step = None
+            app.shown_hints = set()
+            await app.update_hints()
+            assert app.shown_hints == set()
+            assert not list(app.query(".hint.new"))
+
+    asyncio.run(scenario())
+
+
 def test_timed_hint_appears_with_a_highlight_and_a_toast(lab_file):
     lab_file(HINT_LAB)
     import run
