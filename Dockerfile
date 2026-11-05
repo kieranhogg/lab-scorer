@@ -29,7 +29,7 @@ ENV UV_TOOL_DIR=/opt/uv-tools
 RUN --mount=type=cache,target=/root/.cache/uv \
     UV_TOOL_BIN_DIR=/usr/local/bin uv tool install --editable .
 COPY $LAB_FILES/ /opt/lab/
-RUN /opt/venv/bin/python -c "from labtools.task import setup_lab; setup_lab()"
+RUN /opt/venv/bin/python -c "import logging; logging.basicConfig(level=logging.INFO, format='  %(message)s'); from labtools.task import setup_lab; setup_lab()"
 COPY run.py ./
 COPY $LAB_FILES/fil[e]s/ /lab/
 RUN chmod -R a+rX /opt/lab /lab /app/labtools
