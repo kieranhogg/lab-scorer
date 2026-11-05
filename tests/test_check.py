@@ -100,12 +100,12 @@ def test_main_at_end_does_nothing(capsys):
     ],
 )
 def test_stdout_matches(stdout, rules, expected):
-    assert check.stdout_matches(stdout, rules) is expected
+    assert check.text_matches(stdout, rules) is expected
 
 
 def test_stdout_unknown_rule_is_an_error():
     with pytest.raises(ValueError):
-        check.stdout_matches("x", {"startswith": "x"})
+        check.text_matches("x", {"startswith": "x"})
 
 
 def test_run_check_with_stdout_only_ignores_exit_code():

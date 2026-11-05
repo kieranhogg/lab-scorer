@@ -1,6 +1,12 @@
 import pytest
 
-from labtools import check, state
+from labtools import check, state, task
+
+
+@pytest.fixture(autouse=True)
+def fresh_lab_cache():
+    """Each test reads its own lab file, never one parsed for an earlier test."""
+    task._load_lab.cache_clear()
 
 
 @pytest.fixture(autouse=True)
@@ -33,6 +39,7 @@ def lab_file(tmp_path, monkeypatch):
     def write(text: str):
         path = tmp_path / "lab.yml"
         path.write_text(text)
+        task._load_lab.cache_clear()
         monkeypatch.setenv("LAB_FILE", str(path))
         return path
 

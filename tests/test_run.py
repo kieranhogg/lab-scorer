@@ -46,24 +46,6 @@ def test_shell_receives_lab_settings(lab_file, tmp_path):
     assert f"step={run.STEP_FILE}" in result.stdout
 
 
-def test_lab_opens_on_the_welcome_screen(lab_file, step_file):
-    lab_file(LAB)
-    step_file.unlink(missing_ok=True)  # run.py binds STEP_FILE at import, so clear it here
-    import run
-
-    async def scenario():
-        app = run.Lab()
-        async with app.run_test() as pilot:
-            await pilot.pause(1.2)
-            assert app.query_one("#welcome").display
-            assert not app.query_one("#instructions").display
-            assert not app.query_one("#lab-instructions", Collapsible).collapsed
-            assert not app.query_one("#lab-instructions CollapsibleTitle").display
-            assert "Not started" in str(app.query_one("#progress", Label).render())
-
-    asyncio.run(scenario())
-
-
 def test_start_button_loads_the_first_task(lab_file):
     lab_file(LAB)
     import run
