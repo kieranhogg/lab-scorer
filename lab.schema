@@ -29,6 +29,11 @@
         "type": ["string", "number", "boolean"]
       }
     },
+    "user": {
+      "description": "Account the learner's terminal runs as. Defaults to the user running the app.",
+      "type": "string",
+      "minLength": 1
+    },
     "setup": {
       "description": "Commands run once before the learner starts.",
       "type": "array",
