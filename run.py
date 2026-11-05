@@ -13,29 +13,11 @@ import uuid
 from pathlib import Path
 from urllib.parse import quote
 
-from textual import log, events
-from textual._path import CSSPathType
+from textual import log
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
-from textual.driver import Driver
 from textual.widgets import Button, Collapsible, Footer, Header, Input, Label, Markdown, Select
-import textual.app
-
-from textual.design import ColorSystem
-
-if not hasattr(textual.app, "DEFAULT_COLORS"):
-    textual.app.DEFAULT_COLORS = {
-        "dark": ColorSystem(primary="#004578", background="#121212", surface="#1e1e1e", dark=True),
-        "light": ColorSystem(primary="#004578", background="#efefef", surface="#f5f5f5"),
-    }
-
-from rich.style import Style
-from textual_terminal._terminal import TerminalDisplay
-
-
-
-from textual_terminal import Terminal
 
 from labtools.check import groups_pass_silently, step_groups
 from labtools.command import fill_captured
@@ -49,87 +31,14 @@ from labtools.state import (
 from labtools.task import (
     LAB_DIR, content_text, get_hints, get_lab, get_lab_user, lab_path, open_lab_file, run_step_setup, setup_lab,
 )
+from terminal import LabTerminal
 
 HINTS_TITLE = "💡 Hints"
-SHELL = os.environ.get("SHELL", "bash")
-SCRIPT = "task.py"
 # Editors offered on the start screen, as (label, value)
 EDITORS = [("Terminal only", "terminal"), ("VS Code", "vscode")]
 CODE_SNAP = "/snap/bin/code"
 # Seconds to wait for the snap install before giving up
 INSTALL_TIMEOUT = 600
-
-class BlinkingTerminal(Terminal):
-    cursor_on = True
-
-    def on_mount(self) -> None:
-        self.set_interval(0.5, self._blink)
-
-    def _blink(self) -> None:
-        self.cursor_on = not self.cursor_on
-        self.refresh()
-
-    def render(self):
-        if self._display is None:
-            return self._display
-        lines = []
-        for line in self._display.lines:
-            copy = line.copy()
-            # Drop the cursor span added by the base class, it loses to later styles
-            copy.spans = [s for s in copy.spans if s.style != "reverse"]
-            lines.append(copy)
-        cursor = self._screen.cursor
-        if self.has_focus and self.cursor_on and not cursor.hidden and 0 <= cursor.y < len(lines):
-            # Added last so no earlier style can switch reverse off again
-            lines[cursor.y].stylize(Style(reverse=True), cursor.x, cursor.x + 1)
-        return TerminalDisplay(lines)
-
-    def on_focus(self) -> None:
-        self.cursor_on = True
-        self.refresh()
-
-    def on_blur(self) -> None:
-        self.refresh()
-
-class LabTerminal(BlinkingTerminal):
-    """Terminal that always forwards control keys to the shell."""
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        extra = {
-            "escape": "\x1b",
-            "tab": "\t",
-            "enter": "\r",
-            "backspace": "\x7f",
-            "up": "\x1b[A",
-            "down": "\x1b[B",
-            "right": "\x1b[C",
-            "left": "\x1b[D",
-            "home": "\x1b[1~",
-            "end": "\x1b[4~",
-        }
-        # ctrl+a is 0x01 ... ctrl+z is 0x1a, ctrl+q stays with the app as quit
-        for i, letter in enumerate("abcdefghijklmnopqrstuvwxyz", start=1):
-            if letter != "q":
-                extra[f"ctrl+{letter}"] = chr(i)
-        self.ctrl_keys.update(extra)
-
-    def char_rich_style(self, char):
-        style = super().char_rich_style(char)
-        if style is None:
-            return style
-        return style + Style(
-            reverse=char.reverse,
-            italic=char.italics,
-            underline=char.underscore,
-            strike=char.strikethrough,
-            blink=char.blink,
-        )
-
-    async def on_paste(self, event: events.Paste) -> None:
-        if self.emulator is not None:
-            event.stop()
-            await self.send_queue.put(["stdin", event.text])
 
 class Lab(App):
     CSS = """
@@ -158,9 +67,7 @@ class Lab(App):
         Binding("f2", "request_help", "Get help", priority=True),
     ]
     SCRUB = {"VIRTUAL_ENV", "UV_PROJECT_ENVIRONMENT", "PYTHONHOME", "PYTHONPATH", "PYTHONUSERBASE"}
-    LAB_DIR = Path(os.environ.get("LAB_DIR", Path.home() / "Projects" / "lab-scorer")).resolve()
     LAB_HOME = _LAB_HOME
-    SCRIPT = (LAB_DIR / "run.py").resolve()
     SHELL = os.environ.get("SHELL", "/bin/bash")
     current_step = 0
     started = False
@@ -172,8 +79,6 @@ class Lab(App):
     HINT_HIGHLIGHT = 20.0
     # Seconds a new hint takes to fade in
     HINT_FADE = 1.5
-    # (step, hint number) pairs already on screen, so only new ones are announced
-    shown_hints: set[tuple[int, int]] = set()
     # The step whose hints reset_hints has loaded, None while a step change is in progress
     hints_step: int | None = None
     # Where progress reports go, the viewer is optional so failures are ignored
@@ -181,14 +86,10 @@ class Lab(App):
     STUDENT_NAME = os.environ.get("LAB_STUDENT_NAME", "")
     report_session = None
 
-    def __init__(
-        self,
-        driver_class: type[Driver] | None = None,
-        css_path: CSSPathType | None = None,
-        watch_css: bool = False,
-        ansi_color: bool | None = None,
-    ):
-        super().__init__(driver_class, css_path, watch_css, ansi_color)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # (step, hint number) pairs already on screen, so only new ones are announced
+        self.shown_hints: set[tuple[int, int]] = set()
         log("Getting lab...")
         self.lab = open_lab_file()
         if problems := validate_lab(self.lab):
@@ -357,7 +258,7 @@ class Lab(App):
             return
         command = event.href.removeprefix("cmd:")  # LinkClicked already URL-decodes href
         terminal = self.query_one("#terminal", LabTerminal)
-        terminal.send_queue.put_nowait(["stdin", command])
+        terminal.send_text(command)
         terminal.focus()
 
     async def check_progress(self) -> None:
@@ -590,13 +491,10 @@ class Lab(App):
         self.query_one("#lab-instructions", Collapsible).collapsed = True
         self.query_one("#instructions-box", VerticalScroll).scroll_home(animate=False)
 
-    def get_terminal_output(self):
-        screen = self.query_one("#terminal", LabTerminal)._screen
-        return "\n".join(line.rstrip() for line in screen.display).rstrip()
+    def get_terminal_output(self) -> str:
+        return self.query_one("#terminal", LabTerminal).screen_text()
 
     def action_copy_terminal(self) -> None:
-        screen = self.query_one("#terminal", LabTerminal)._screen
-        text = "\n".join(line.rstrip() for line in screen.display).rstrip()
         self.copy_to_clipboard(self.get_terminal_output())
         self.notify("Terminal contents copied")
 

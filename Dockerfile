@@ -1,10 +1,8 @@
 FROM ubuntu:24.04
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 ENV LAB_DIR=/app LAB_HOME=/lab LC_ALL=C.UTF-8
-#ENV LAB_DIR=/app LC_ALL=C.UTF-8
 ARG LAB_FILES
 ENV LAB_FILES=$LAB_FILES
-#ENV LAB_HOME=/opt/lab
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
 ENV UV_PYTHON_INSTALL_DIR=/opt/python
@@ -30,7 +28,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     UV_TOOL_BIN_DIR=/usr/local/bin uv tool install --editable .
 COPY $LAB_FILES/ /opt/lab/
 RUN /opt/venv/bin/python -c "import logging; logging.basicConfig(level=logging.INFO, format='  %(message)s'); from labtools.task import setup_lab; setup_lab()"
-COPY run.py ./
+COPY run.py terminal.py ./
 COPY $LAB_FILES/fil[e]s/ /lab/
 RUN chmod -R a+rX /opt/lab /lab /app/labtools
 CMD ["/opt/venv/bin/python", "run.py"]
