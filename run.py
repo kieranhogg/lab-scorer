@@ -244,7 +244,16 @@ class Lab(App):
         )
         lab_user = get_lab_user()
         if lab_user:
-            env["HOME"] = pwd.getpwnam(lab_user).pw_dir
+            account = pwd.getpwnam(lab_user)
+            runtime = f"/run/user/{account.pw_uid}"
+            env.update(
+                HOME=account.pw_dir,
+                USER=lab_user,
+                LOGNAME=lab_user,
+                USERNAME=lab_user,
+                XDG_RUNTIME_DIR=runtime,
+                DBUS_SESSION_BUS_ADDRESS=f"unix:path={runtime}/bus",
+            )
         assignments = " ".join(
             f"{name}={shlex.quote(value)}"
             for name, value in env.items()
