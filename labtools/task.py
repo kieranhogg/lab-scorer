@@ -1,11 +1,15 @@
 import logging
 import os
+import re
+import shlex
 import subprocess
+import sys
 from pathlib import Path
 
 import yaml
 
-from labtools.state import LAB_HOME
+from labtools.command import extract_values, run_command, shell_refs
+from labtools.state import LAB_HOME, read_passed, save_captured, write_step
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +31,25 @@ def find_script(script: str, base: Path | None = None) -> Path:
     return beside_lab if beside_lab.exists() else LAB_DIR / script
 
 
+VAR_REF = re.compile(r"\$\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
+
+
+def apply_vars(node, variables: dict):
+    """Replace ${name} with the lab's vars everywhere. Other ${...} text is left for later."""
+    if isinstance(node, str):
+        def value(match):
+            if match[1] not in variables:
+                return match[0]
+            item = variables[match[1]]
+            return str(item).lower() if isinstance(item, bool) else str(item)
+        return VAR_REF.sub(value, node)
+    if isinstance(node, list):
+        return [apply_vars(item, variables) for item in node]
+    if isinstance(node, dict):
+        return {key: apply_vars(item, variables) for key, item in node.items()}
+    return node
+
+
 def open_lab_file():
     """Load the lab definition, from LAB_FILE if set (used by tests and local runs).
 
@@ -36,9 +59,19 @@ def open_lab_file():
     path = lab_path()
     try:
         with open(path) as lab_file:
-            return yaml.safe_load(lab_file)
+            lab = yaml.safe_load(lab_file)
     except FileNotFoundError:
         raise FileNotFoundError(f"Lab file {path} not found. Set LAB_FILE to the lab definition.") from None
+    if isinstance(lab, dict) and isinstance(lab.get("vars"), dict):
+        lab = {key: value if key == "vars" else apply_vars(value, lab["vars"]) for key, value in lab.items()}
+    return lab
+
+
+def content_text(value) -> str:
+    """Return inline text, or the Markdown file named by {file: path} next to the lab file."""
+    if isinstance(value, dict):
+        return (lab_path().parent / value["file"]).read_text()
+    return value or ""
 
 
 def setup_lab():
@@ -54,12 +87,15 @@ def setup_lab():
     for entry in open_lab_file().get("setup") or []:
         if script := entry.get("run"):
             logger.info(f"Running {script}")
-            subprocess.run(
-                ["bash", str(find_script(script))],
-                cwd=entry.get("cwd", LAB_HOME),
-                env={**os.environ, "LAB_HOME": str(LAB_HOME)},
-                check=True,
-            )
+            command = f"bash {shlex.quote(str(find_script(script)))}"
+            # Setup scripts may install packages, so they get no time limit unless the lab sets one
+            result = run_command(entry, command, LAB_HOME, default_timeout=None)
+            sys.stdout.write(result.stdout)
+            sys.stderr.write(result.stderr)
+            if result.returncode != 0:
+                raise subprocess.CalledProcessError(result.returncode, command, result.stdout, result.stderr)
+            if entry.get("capture"):
+                save_captured(extract_values(entry["capture"], result, LAB_HOME), setup=True)
     SETUP_MARKER.touch()
 
 
@@ -81,3 +117,39 @@ def get_hints(step: int) -> list[dict]:
     if not 0 <= step < len(steps):
         return []
     return steps[step].get("hints") or []
+
+def get_progression() -> str:
+    """Return linear (a step unlocks when the one before is passed) or free."""
+    return open_lab_file().get("progression", "linear")
+
+
+def unmet_requirements(step: int) -> list[str]:
+    """Return the ids of steps the student must pass before entering this step."""
+    steps = get_lab()
+    if not 0 <= step < len(steps):
+        return []
+    ids = [other.get("id") for other in steps]
+    passed = read_passed()
+    return [wanted for wanted in steps[step].get("requires") or [] if wanted in ids and ids.index(wanted) not in passed]
+
+
+def run_step_setup(step: int) -> None:
+    """Run the setup commands of a step. A failing command is reported and the step carries on."""
+    steps = get_lab()
+    if not 0 <= step < len(steps):
+        return
+    for entry in steps[step].get("setup") or []:
+        try:
+            result = run_command(entry, shell_refs(entry["run"]), LAB_HOME)
+            if result.returncode != 0:
+                raise OSError(result.stderr.strip() or f"exit code {result.returncode}")
+            if entry.get("capture"):
+                save_captured(extract_values(entry["capture"], result, LAB_HOME))
+        except (OSError, ValueError, subprocess.TimeoutExpired) as error:
+            print(f"Setup for this step failed: {error}", file=sys.stderr)
+
+
+def enter_step(step: int) -> None:
+    """Move to a step and run its setup commands."""
+    write_step(step)
+    run_step_setup(step)

@@ -2,6 +2,7 @@
 from rich.console import Console
 
 from labtools.state import is_started, read_student, start
+from labtools.task import run_step_setup
 
 console = Console()
 
@@ -16,6 +17,7 @@ def main() -> None:
         console.print("Enter your name in the instructions pane first.")
         return
     start()
+    run_step_setup(0)
     console.print("Lab started. The first task is in the instructions pane.")
 
 

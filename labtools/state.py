@@ -1,10 +1,14 @@
 """Tracks lab progress in a JSON file shared by the scorer UI and the lab commands.
 
-The file looks like {"started": true, "step": 1, "checks": {"0": 3}, "hints": {"0": 1}, "passed": {"0": true}}.
-Counters and pass marks are keyed by the step they happened on.
+The file looks like {"started": true, "step": 1, "checks": {"0": 3}, "hints": {"0": 1}, "passed": {"0": true},
+"entered": {"0": 1730000000.0}, "captured": {"orders": 3}}.
+Counters, pass marks and the time a step was first entered are keyed by the step they happened on.
+Values captured by setup commands live in a second file, because the step file is wiped each time the app starts
+and setup only runs once.
 """
 import json
 import os
+import time
 from pathlib import Path
 
 LAB_HOME = Path(os.environ.get("LAB_HOME", Path.home() / "lab")).resolve()
@@ -69,13 +73,23 @@ def is_started() -> bool:
 def start() -> None:
     data = read_state()
     data["started"] = True
+    data.setdefault("entered", {}).setdefault("0", time.time())
     _save(data)
 
 
 def write_step(step: int) -> None:
     data = read_state()
     data["step"] = step
+    # Only the first visit counts, so going back never relocks a hint that timed out
+    data.setdefault("entered", {}).setdefault(str(step), time.time())
     _save(data)
+
+
+def read_step_seconds() -> float:
+    """Return the seconds since the student first entered the current step, 0 if unknown."""
+    data = read_state()
+    entered = data.get("entered", {}).get(str(data.get("step", 0)))
+    return max(0.0, time.time() - entered) if entered else 0.0
 
 
 def record_pass(step: int) -> None:
@@ -125,3 +139,33 @@ def set_student(name: str, editor: str) -> None:
     data = read_state()
     data["student"] = {"name": name, "editor": editor}
     _save(data)
+
+
+def _setup_captures_file() -> Path:
+    return STEP_FILE.with_name(".lab_setup_captures")
+
+
+def read_captured() -> dict:
+    """Return every captured value. Values captured on a step override those from setup."""
+    from_steps = read_state().get("captured", {})
+    return {**read_captured_setup(), **(from_steps if isinstance(from_steps, dict) else {})}
+
+
+def save_captured(values: dict, setup: bool = False) -> None:
+    """Remember captured values for later commands, instructions and assertions."""
+    if setup:
+        path = _setup_captures_file()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({**read_captured_setup(), **values}))
+        return
+    data = read_state()
+    data.setdefault("captured", {}).update(values)
+    _save(data)
+
+
+def read_captured_setup() -> dict:
+    try:
+        data = json.loads(_setup_captures_file().read_text())
+    except (FileNotFoundError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}

@@ -1,11 +1,41 @@
 #!/usr/bin/env python3
-from labtools.start import NOT_STARTED
-from labtools.state import is_started, read_checks, read_step, record_hint
-from labtools.task import get_hints
+"""Hints and when they unlock.
 
+A hint with no rule is always available. reveal_after unlocks it after that long on the step,
+after_failed_attempts after that many `check` runs on the step, and reveal: on_request once
+the student has asked with the `hint` command.
+"""
 from rich.console import Console
 
+from labtools.command import timeout_seconds
+from labtools.start import NOT_STARTED
+from labtools.state import (
+    is_started,
+    read_checks,
+    read_step,
+    read_step_seconds,
+    record_hint,
+)
+from labtools.task import get_hints
+
 console = Console()
+
+
+def is_available(hint: dict, attempts: int, seconds: float, requested: bool) -> bool:
+    """Return whether a hint can be shown, given the check runs and time spent on the step."""
+    if "after_failed_attempts" in hint:
+        return attempts >= hint["after_failed_attempts"]
+    if "reveal_after" in hint:
+        return seconds >= timeout_seconds(hint["reveal_after"])
+    if hint.get("reveal") == "on_request":
+        return requested
+    return True
+
+
+def available_indices(hints: list[dict], attempts: int, seconds: float, requested: bool) -> list[int]:
+    """Return the positions of the hints that can be shown, in lab file order."""
+    return [number for number, hint in enumerate(hints) if is_available(hint, attempts, seconds, requested)]
+
 
 def main() -> None:
     if not is_started():
@@ -16,16 +46,16 @@ def main() -> None:
         console.print("No hints")
         return
 
-    attempts = read_checks()
-    available = [h for h in hints if attempts >= h.get("after_failed_attempts", 0)]
-    if not available:
+    # Running this command is the request, so on_request hints count as asked for
+    shown = available_indices(hints, read_checks(), read_step_seconds(), requested=True)
+    if not shown:
         console.print("Not yet!")
         return
 
-    for hint in available:
-        console.print(hint["text"])
-    if len(available) < len(hints):
-        console.print("More hints unlock after more check attempts.")
+    for number in shown:
+        console.print(hints[number]["text"])
+    if len(shown) < len(hints):
+        console.print("More hints unlock after more check attempts or more time on this step.")
     record_hint()
 
 

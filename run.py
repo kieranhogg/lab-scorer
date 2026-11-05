@@ -37,14 +37,20 @@ from textual_terminal._terminal import TerminalDisplay
 
 from textual_terminal import Terminal
 
-from labtools.check import checks_pass_silently
+from labtools.check import groups_pass_silently, step_groups
+from labtools.command import fill_captured
+from labtools.hint import available_indices
 from labtools.lint import validate_lab
 from labtools.score import compute_score
 from labtools.state import (
-    LAB_HOME as _LAB_HOME, STEP_FILE, is_started, read_help, read_step, read_student, set_help, set_student, start,
+    LAB_HOME as _LAB_HOME, STEP_FILE, is_started, read_checks, read_help, read_hints, read_step, read_step_seconds,
+    read_student, set_help, set_student, start,
 )
-from labtools.task import LAB_DIR, get_checks, get_lab, lab_path, open_lab_file, setup_lab, get_lab_user
+from labtools.task import (
+    LAB_DIR, content_text, get_hints, get_lab, get_lab_user, lab_path, open_lab_file, run_step_setup, setup_lab,
+)
 
+HINTS_TITLE = "💡 Hints"
 SHELL = os.environ.get("SHELL", "bash")
 SCRIPT = "task.py"
 # Editors offered on the start screen, as (label, value)
@@ -137,6 +143,12 @@ class Lab(App):
     /* The toggle only appears once the student is off the start page */
     #lab-instructions CollapsibleTitle { display: none; }
     #instructions-box.started #lab-instructions CollapsibleTitle { display: block; }
+    #hints { margin: 1 0; }
+    /* Vertical defaults to 1fr, which stretched the list to fill the pane */
+    #hint-list { height: auto; }
+    .hint { height: auto; border-left: thick $success; padding: 0 1; margin-bottom: 1; }
+    /* A hint that has just unlocked stands out until its timer clears the class */
+    .hint.new { border-left: thick $warning; background: $warning 15%; }
     """
 
     # Priority so quit still works while the terminal has focus
@@ -156,6 +168,12 @@ class Lab(App):
     WATCH_INTERVAL = 3.0
     ready_step = None
     watching = False
+    # Seconds a freshly unlocked hint keeps its highlight
+    HINT_HIGHLIGHT = 20.0
+    # Seconds a new hint takes to fade in
+    HINT_FADE = 1.5
+    # (step, hint number) pairs already on screen, so only new ones are announced
+    shown_hints: set[tuple[int, int]] = set()
     # Where progress reports go, the viewer is optional so failures are ignored
     VIEWER_URL = os.environ.get("LAB_VIEWER_URL", "http://host.docker.internal:5000")
     STUDENT_NAME = os.environ.get("LAB_STUDENT_NAME", "")
@@ -183,14 +201,19 @@ class Lab(App):
     def get_progress(self, step: int) -> str:
         return f"Progress: {step + 1}/{len(self.steps)}"
 
-    def get_step_instructions(self, step):
+    def get_step_heading(self, step):
         title = self.steps[step].get("title")
-        instructions = self.steps[step].get("instructions")
-        links = self.steps[step].get("links", [])
         markdown = "# Tasks\n"
         markdown += f"## Step {step + 1}"
         markdown += f": {title}\n" if title is not None else "\n"
-        markdown += self.linkify_commands(instructions) if instructions is not None else ""
+        return markdown
+
+    def get_step_instructions(self, step):
+        instructions = self.steps[step].get("instructions")
+        links = self.steps[step].get("links", [])
+        markdown = ""
+        # Captured values only exist once earlier checks pass, so fill them in each time a step opens
+        markdown += self.linkify_commands(fill_captured(content_text(instructions))) if instructions is not None else ""
         if links:
             markdown += "\n\n---\n\n"
             for link in links:
@@ -267,12 +290,16 @@ class Lab(App):
                         yield Button("Start lab", id="start", variant="success")
                     with Horizontal(classes="centered"):
                         yield Label("or type 'start' in the terminal to begin")
-                markdown = self.get_step_instructions(0)
-                tasks = Markdown(markdown, id="instructions", open_links=False)
+                heading = Markdown(self.get_step_heading(0), id="step-heading", open_links=False)
+                heading.display = False
+                yield heading
+                # Hints sit between the step title and its instructions
+                hints = Collapsible(Vertical(id="hint-list"), id="hints", title=HINTS_TITLE, collapsed=True)
+                hints.display = False
+                yield hints
+                tasks = Markdown(self.get_step_instructions(0), id="instructions", open_links=False)
                 tasks.display = False
                 yield tasks
-                # with Collapsible(id="hints", title="Show hints...", collapsed=True, disabled=not bool(self.steps[0].get("hints"))):
-                #     yield Markdown("\n".join(hint.get("text") for hint in self.steps[0].get("hints") if not hint.get("after_failed_attempts")), id="instructions", open_links=False)
             with VerticalScroll(id="terminal-window"):
                 yield LabTerminal(
                     # Run the script, then drop into a normal shell so the pane stays open
@@ -304,6 +331,7 @@ class Lab(App):
         self.query_one("#welcome").display = False
         self.query_one("#student-name", Input).focus()
         self.set_interval(1.0, self.check_progress)
+        self.set_interval(1.0, self.update_hints)
         self.set_interval(self.WATCH_INTERVAL, self.send_progress)
         self.set_interval(self.WATCH_INTERVAL, self.watch_checks)
 
@@ -325,18 +353,21 @@ class Lab(App):
         if not self.started:
             self.started = True
             self.query_one("#welcome").display = False
+            self.query_one("#step-heading").display = True
             self.query_one("#instructions").display = True
             self.query_one("#instructions-box").add_class("started")
         self.current_step = step
-        self.ready_step = None
         if step == len(self.steps):
+            self.ready_step = None
             await self.show_complete()
             return
+        await self.query_one("#step-heading", Markdown).update(self.get_step_heading(step))
         await self.query_one("#instructions", Markdown).update(self.get_step_instructions(step))
         self.query_one("#lab-instructions", Collapsible).collapsed = True
+        # Reset with the label so a watcher result that landed during the awaits above is not lost
+        self.ready_step = None
         self.query_one("#progress", Label).update(self.get_progress(step))
-
-        # self.query_one("#hints", Collapsible).disabled = not bool(self.steps[step].get("hints"))
+        await self.reset_hints(step)
         self.query_one("#instructions-box", VerticalScroll).scroll_home(animate=False)
 
     async def send_progress(self) -> None:
@@ -377,12 +408,12 @@ class Lab(App):
         step = read_step()
         if self.watching or self.ready_step == step or not is_started() or step >= len(self.steps):
             return
-        checks = get_checks()[step]
-        if not checks:
+        groups = step_groups(step)
+        if not groups:
             return
         self.watching = True
         try:
-            passed = await asyncio.to_thread(checks_pass_silently, checks)
+            passed = await asyncio.to_thread(groups_pass_silently, groups)
         finally:
             self.watching = False
         if passed and read_step() == step:
@@ -390,11 +421,74 @@ class Lab(App):
             self.query_one("#progress", Label).update(f"{self.get_progress(step)} · All checks pass, run `check`")
             self.notify("All checks pass. Run `check` to complete this step.", timeout=10)
 
+    def hint_markdown(self, number: int, text: str, new: bool) -> str:
+        badge = "  ✨ **NEW**" if new else ""
+        return f"**Hint {number}**{badge}\n\n{self.linkify_commands(fill_captured(text))}"
+
+    def available_hint_numbers(self, step: int) -> list[int]:
+        """Hints the student can see now, as positions in the step's hint list."""
+        return available_indices(get_hints(step), read_checks(), read_step_seconds(), read_hints() > 0)
+
+    async def reset_hints(self, step: int) -> None:
+        """Show the hints that are already unlocked when a step opens, without announcing them."""
+        hints = get_hints(step)
+        container = self.query_one("#hint-list", Vertical)
+        await container.remove_children()
+        numbers = self.available_hint_numbers(step)
+        self.shown_hints = {(step, number) for number in numbers}
+        await container.mount_all(
+            Markdown(self.hint_markdown(number + 1, hints[number]["text"], new=False), classes="hint", open_links=False)
+            for number in numbers
+        )
+        collapsible = self.query_one("#hints", Collapsible)
+        collapsible.collapsed = True
+        collapsible.title = f"{HINTS_TITLE} ({len(numbers)})"
+        collapsible.display = bool(numbers)
+
+    async def update_hints(self) -> None:
+        """Reveal hints that unlock while the student works, with a fade in, a NEW badge and a toast."""
+        step = self.current_step
+        if not self.started or step >= len(self.steps):
+            return
+        hints = get_hints(step)
+        numbers = self.available_hint_numbers(step)
+        fresh = [number for number in numbers if (step, number) not in self.shown_hints]
+        if not fresh:
+            return
+        container = self.query_one("#hint-list", Vertical)
+        collapsible = self.query_one("#hints", Collapsible)
+        for number in fresh:
+            self.shown_hints.add((step, number))
+            text = hints[number]["text"]
+            widget = Markdown(self.hint_markdown(number + 1, text, new=True), classes="hint new", open_links=False)
+            widget.styles.opacity = 0.0
+            await container.mount(widget)
+            widget.styles.animate("opacity", value=1.0, duration=self.HINT_FADE, easing="out_cubic")
+            self.set_timer(self.HINT_HIGHLIGHT, self.clear_new_hint(widget, number + 1, text))
+        collapsible.title = f"{HINTS_TITLE} ({len(numbers)})"
+        collapsible.display = True
+        # Open the toggle so the student sees it appear, they can close it again
+        collapsible.collapsed = False
+        self.notify(
+            "A new hint has unlocked" if len(fresh) == 1 else f"{len(fresh)} new hints have unlocked",
+            title="💡 Hint",
+            timeout=8,
+        )
+
+    def clear_new_hint(self, widget: Markdown, number: int, text: str):
+        """Return the timer callback that drops a hint's NEW highlight."""
+        async def clear() -> None:
+            if widget.is_mounted:
+                widget.remove_class("new")
+                await widget.update(self.hint_markdown(number, text, new=False))
+        return clear
+
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "continue":
             self.finish_setup()
         elif event.button.id == "start":
             start()
+            await asyncio.to_thread(run_step_setup, 0)
             await self.check_progress()
             self.query_one("#terminal", LabTerminal).focus()
 
@@ -448,6 +542,7 @@ class Lab(App):
                 return
             executable = shutil.which("code") or CODE_SNAP
         try:
+            self.notify("Opening VS Code, hang on!", timeout=10)
             subprocess.Popen(
                 [executable, str(self.LAB_HOME)],
                 env=self.clean_env(),
@@ -468,6 +563,8 @@ class Lab(App):
         earned, total = compute_score(self.steps)
         text = f"# Lab complete\nAll steps are done. Run `back` to revisit a step.\n\n**Score: {earned}/{total}**"
         await self.query_one("#instructions", Markdown).update(text)
+        self.query_one("#step-heading").display = False
+        self.query_one("#hints").display = False
         self.query_one("#progress", Label).update("Progress: complete")
         self.query_one("#lab-instructions", Collapsible).collapsed = True
         self.query_one("#instructions-box", VerticalScroll).scroll_home(animate=False)
