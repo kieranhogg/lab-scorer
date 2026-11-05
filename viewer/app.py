@@ -1,9 +1,9 @@
 import hmac
 import os
-
 import time
+from typing import Any
 
-from flask import Flask, request, Response
+from flask import Flask, Response, request
 
 app = Flask(__name__, static_folder="static", static_url_path="")
 
@@ -15,8 +15,8 @@ MAX_TEXT = 100
 app.config["MAX_CONTENT_LENGTH"] = 64 * 1024
 
 # Instances waiting to be told that the instructor has answered their help request
-acked = set()
-instances = {}
+acked: set[str] = set()
+instances: dict[str, dict[str, Any]] = {}
 
 @app.before_request
 def require_login():

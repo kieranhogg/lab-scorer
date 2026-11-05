@@ -1,9 +1,7 @@
 import asyncio
 import base64
-import pwd
-
-import aiohttp
 import os
+import pwd
 import re
 import shlex
 import shutil
@@ -11,13 +9,24 @@ import subprocess
 import sys
 import uuid
 from pathlib import Path
+from typing import ClassVar
 from urllib.parse import quote
 
+import aiohttp
 from textual import log
 from textual.app import App, ComposeResult
-from textual.binding import Binding
+from textual.binding import Binding, BindingType
 from textual.containers import Horizontal, Vertical, VerticalScroll
-from textual.widgets import Button, Collapsible, Footer, Header, Input, Label, Markdown, Select
+from textual.widgets import (
+    Button,
+    Collapsible,
+    Footer,
+    Header,
+    Input,
+    Label,
+    Markdown,
+    Select,
+)
 
 from labtools.check import groups_pass_silently, step_groups
 from labtools.command import fill_captured
@@ -25,11 +34,31 @@ from labtools.hint import available_indices
 from labtools.lint import validate_lab
 from labtools.score import compute_score
 from labtools.state import (
-    LAB_HOME as _LAB_HOME, STEP_FILE, is_started, read_checks, read_help, read_hints, read_step, read_step_seconds,
-    read_student, set_help, set_student, start,
+    LAB_HOME as _LAB_HOME,
+)
+from labtools.state import (
+    STEP_FILE,
+    is_started,
+    read_checks,
+    read_help,
+    read_hints,
+    read_step,
+    read_step_seconds,
+    read_student,
+    set_help,
+    set_student,
+    start,
 )
 from labtools.task import (
-    LAB_DIR, content_text, get_hints, get_lab, get_lab_user, lab_path, open_lab_file, run_step_setup, setup_lab,
+    LAB_DIR,
+    content_text,
+    get_hints,
+    get_lab,
+    get_lab_user,
+    lab_path,
+    open_lab_file,
+    run_step_setup,
+    setup_lab,
 )
 from terminal import LabTerminal
 
@@ -61,12 +90,12 @@ class Lab(App):
     """
 
     # Priority so quit still works while the terminal has focus
-    BINDINGS = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         Binding("ctrl+q", "quit", "Quit", priority=True, ),
         Binding("ctrl+shift+c", "copy_terminal", "Copy terminal", priority=True),
         Binding("f2", "request_help", "Get help", priority=True),
     ]
-    SCRUB = {"VIRTUAL_ENV", "UV_PROJECT_ENVIRONMENT", "PYTHONHOME", "PYTHONPATH", "PYTHONUSERBASE"}
+    SCRUB: ClassVar[set[str]] = {"VIRTUAL_ENV", "UV_PROJECT_ENVIRONMENT", "PYTHONHOME", "PYTHONPATH", "PYTHONUSERBASE"}
     LAB_HOME = _LAB_HOME
     SHELL = os.environ.get("SHELL", "/bin/bash")
     current_step = 0
@@ -86,7 +115,7 @@ class Lab(App):
     STUDENT_NAME = os.environ.get("LAB_STUDENT_NAME", "")
     report_session = None
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         # (step, hint number) pairs already on screen, so only new ones are announced
         self.shown_hints: set[tuple[int, int]] = set()
@@ -131,7 +160,7 @@ class Lab(App):
         )
         return env
 
-    def terminal_command(self, shell, cwd, script: str) -> str:
+    def terminal_command(self, shell, cwd, script: str | None) -> str:
         # textual-terminal starts the child with only TERM, LC_ALL and HOME, so the
         # whole environment is passed on the command line, including the LAB_* settings
         # that the check, next, back and hint commands read.
@@ -310,7 +339,7 @@ class Lab(App):
         try:
             async with self.report_session.post(f"{self.VIEWER_URL}/api/report", json=payload) as resp:
                 reply = await resp.json()
-        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
+        except (TimeoutError, aiohttp.ClientError, ValueError):
             return
         if reply.get("ack_help") and read_help():
             set_help(False)
@@ -426,6 +455,7 @@ class Lab(App):
             self.query_one("#student-name", Input).focus()
             return
         editor = self.query_one("#editor", Select).value
+        assert isinstance(editor, str)  # allow_blank is off, so a choice always exists
         set_student(name, editor)
         self.query_one("#setup").display = False
         self.query_one("#lab-instructions").display = True
@@ -452,7 +482,7 @@ class Lab(App):
                 )
                 try:
                     await asyncio.wait_for(proc.wait(), timeout=INSTALL_TIMEOUT)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     proc.kill()
                     self.notify(failed, severity="warning")
                     return
@@ -465,7 +495,8 @@ class Lab(App):
             executable = shutil.which("code") or CODE_SNAP
         try:
             self.notify("Opening VS Code, hang on! If it doesn't load `code .` opens it.", timeout=10)
-            subprocess.Popen(
+            await asyncio.to_thread(
+                subprocess.Popen,
                 [executable, str(self.LAB_HOME)],
                 env=self.clean_env(),
                 stdin=subprocess.DEVNULL,

@@ -38,6 +38,7 @@ def test_shell_receives_lab_settings(lab_file, tmp_path):
     command = run.Lab().terminal_command("sh", tmp_path, None)
     result = subprocess.run(
         shlex.split(command),
+        check=False,
         input="echo home=$LAB_HOME step=$LAB_STEP_FILE\n",
         capture_output=True,
         text=True,
@@ -204,7 +205,7 @@ def test_timed_hint_appears_with_a_highlight_and_a_toast(lab_file):
             assert len(hint_texts(app)) == 2
             assert "(2)" in hints.title
             assert not hints.collapsed
-            new = list(app.query(".hint.new"))
+            new = list(app.query(Markdown).filter(".hint.new"))
             assert len(new) == 1
             assert "NEW" in new[0].source
             assert "after a wait" in new[0].source

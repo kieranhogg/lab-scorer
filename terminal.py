@@ -11,13 +11,14 @@ from textual.design import ColorSystem
 # Compatibility shim, keep it before the textual_terminal imports below
 # This fixes a bug in textual-terminal not keeping up with textual code changes.
 if not hasattr(textual.app, "DEFAULT_COLORS"):
-    textual.app.DEFAULT_COLORS = {
+    fallback_colors = {
         "dark": ColorSystem(primary="#004578", background="#121212", surface="#1e1e1e", dark=True),
         "light": ColorSystem(primary="#004578", background="#efefef", surface="#f5f5f5"),
     }
+    setattr(textual.app, "DEFAULT_COLORS", fallback_colors)  # noqa: B010 textual.app does not declare it, so plain assignment fails type checks
 
-from textual_terminal import Terminal  # noqa: E402
-from textual_terminal._terminal import TerminalDisplay  # noqa: E402
+from textual_terminal import Terminal
+from textual_terminal._terminal import TerminalDisplay
 
 
 class BlinkingTerminal(Terminal):

@@ -9,6 +9,7 @@ import os
 import re
 import subprocess
 from pathlib import Path
+from typing import overload
 
 from labtools import jsonpath
 from labtools.state import read_captured, read_cwd
@@ -22,6 +23,10 @@ TRUE_WORDS = {"true", "1", "yes", "y"}
 FALSE_WORDS = {"false", "0", "no", "n", ""}
 
 
+@overload
+def timeout_seconds(value) -> float: ...
+@overload
+def timeout_seconds(value, default: float | None) -> float | None: ...
 def timeout_seconds(value, default: float | None = DEFAULT_TIMEOUT) -> float | None:
     """Turn 30, "30s", "5m" or "1h" into seconds. A missing value gives the default."""
     if value is None:
@@ -82,7 +87,7 @@ def _convert(raw, kind: str):
             raise ValueError(f"{raw!r} is not true or false")
         return word in TRUE_WORDS
     if isinstance(raw, bool):
-        raise ValueError(f"{raw!r} is not a number")
+        raise ValueError(f"{raw!r} is not a number")  # noqa: TRY004 callers catch ValueError for every capture problem
     return int(raw) if kind == "int" else float(raw)
 
 

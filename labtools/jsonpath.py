@@ -3,6 +3,7 @@
 Supported: $, .key, ['key'], ["key"], [0], [-1], [*] and .*
 """
 import re
+from typing import Any
 
 WILDCARD = object()
 TOKEN = re.compile(r"""\.\*|\[\*\]|\.(\w+)|\[(-?\d+)\]|\['([^']*)'\]|\["([^"]*)"\]""")
@@ -29,7 +30,16 @@ def parse(path: str) -> list:
     return steps
 
 
-def lookup(data, path: str) -> tuple[bool, object]:
+def _child(node: object, step: object) -> list:
+    """Return the one child of node at step as a list, empty when node has no such child."""
+    if isinstance(node, list) and isinstance(step, int):
+        return [node[step]] if -len(node) <= step < len(node) else []
+    if isinstance(node, dict) and isinstance(step, str):
+        return [node[step]] if step in node else []
+    return []
+
+
+def lookup(data, path: str) -> tuple[bool, Any]:
     """Return (found, value). A path with a wildcard gives the list of every match."""
     steps = parse(path)
     nodes = [data]
@@ -38,10 +48,8 @@ def lookup(data, path: str) -> tuple[bool, object]:
         for node in nodes:
             if step is WILDCARD:
                 found += list(node.values()) if isinstance(node, dict) else list(node) if isinstance(node, list) else []
-            elif isinstance(step, int) and isinstance(node, list) and -len(node) <= step < len(node):
-                found.append(node[step])
-            elif isinstance(step, str) and isinstance(node, dict) and step in node:
-                found.append(node[step])
+            else:
+                found += _child(node, step)
         nodes = found
     if WILDCARD in steps:
         return bool(nodes), nodes

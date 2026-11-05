@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 from rich.console import Console
 
 from labtools.state import read_step

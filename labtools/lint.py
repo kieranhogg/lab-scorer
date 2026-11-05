@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Validate a lab file so authoring mistakes show up before students see them.
 
 Run `lablint path/to/lab.yml`. The app runs the same checks on startup.
@@ -6,6 +5,7 @@ Run `lablint path/to/lab.yml`. The app runs the same checks on startup.
 import re
 import sys
 from pathlib import Path
+from typing import TypeGuard
 
 import yaml
 
@@ -29,7 +29,7 @@ CAPTURE_SOURCES = {"stdout", "stderr", "exit_code", "file"}
 CAPTURE_TYPES = {"string", "int", "number", "bool"}
 
 
-def _is_int(value) -> bool:
+def _is_int(value) -> TypeGuard[int]:
     return isinstance(value, int) and not isinstance(value, bool)
 
 

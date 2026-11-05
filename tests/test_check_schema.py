@@ -1,12 +1,16 @@
 """The check vocabulary from lab.schema: matchers, captures, depends_on, regression, final checks, step setup."""
 import json
-import subprocess
 
 import pytest
 
 from labtools import check, command, hint, task
 from labtools import next as next_cmd
-from labtools.state import read_captured, read_step, record_check, record_pass, write_step
+from labtools.state import (
+    read_captured,
+    read_step,
+    record_pass,
+    write_step,
+)
 
 
 def make(run, expect, **extra):
@@ -226,11 +230,15 @@ def staged(lab_file, lab_home):
 
 def test_step_groups_add_regression_and_final_checks(staged):
     groups = check.step_groups(1)
+    assert groups is not None
     assert [prefix for _, prefix, _ in groups] == ["", "(step 1) "]
     assert [c["id"] for c in groups[1][0]] == ["base"]
     last = check.step_groups(2)
+    assert last is not None
     assert [prefix for _, prefix, _ in last] == ["(step 1) ", "(final) "]
-    assert check.step_groups(0)[0][0][0]["id"] == "base"
+    first = check.step_groups(0)
+    assert first is not None
+    assert first[0][0][0]["id"] == "base"
 
 
 def test_regression_check_blocks_a_later_step(staged, capsys):

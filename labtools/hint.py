@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Hints and when they unlock.
 
 A hint with no rule is always available. reveal_after unlocks it after that long on the step,

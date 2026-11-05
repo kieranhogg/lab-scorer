@@ -158,8 +158,11 @@ def run_step_setup(step: int) -> None:
     if not 0 <= step < len(steps):
         return
     for entry in steps[step].get("setup") or []:
+        command = setup_command(entry)
+        if command is None:
+            continue
         try:
-            result = run_command(entry, setup_command(entry), LAB_HOME)
+            result = run_command(entry, command, LAB_HOME)
             if result.returncode != 0:
                 raise OSError(result.stderr.strip() or f"exit code {result.returncode}")
             if entry.get("capture"):

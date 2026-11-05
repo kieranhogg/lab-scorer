@@ -30,12 +30,26 @@ module-root = ""
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
+# The lab folders hold exercises for students, with stubs that are meant to be incomplete
+[tool.mypy]
+exclude = ["^labs/"]
+
+[[tool.mypy.overrides]]
+module = ["textual_terminal", "textual_terminal.*"]
+ignore_missing_imports = true
+
+[tool.ty.src]
+exclude = ["labs/"]
+
 [dependency-groups]
 dev = [
     "deptry>=0.25.1",
+    "flask>=3.1.3",
     "jscpd>=5.4.2",
+    "mypy>=2.4.1",
     "pytest>=9.1.1",
     "ruff>=0.17.3",
     "textual-dev>=1.8.0",
     "ty>=0.0.93",
+    "types-pyyaml",
 ]
