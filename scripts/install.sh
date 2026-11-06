@@ -57,7 +57,7 @@ main() {
     export UV_PYTHON_INSTALL_DIR=/opt/python
     export UV_TOOL_DIR=/opt/uv-tools
     export UV_TOOL_BIN_DIR=/usr/local/bin
-    export LAB_DIR=$repo LAB_HOME=$STUDENT_DIR
+    export LAB_DIR=$repo LAB_HOME=$STUDENT_DIR LAB_FILE=$APP_DIR/lab.yml
 
     ### Step 3
     step "Installing Python environment"
@@ -101,7 +101,7 @@ JSON
     cat > /usr/local/bin/lab <<EOF
 #!/usr/bin/env bash
 [ "\$EUID" -eq 0 ] || exec sudo "\$0" "\$@"
-exec env LAB_DIR=$repo LAB_HOME=$STUDENT_DIR /opt/venv/bin/python $repo/run.py
+exec env LAB_DIR=$repo LAB_HOME=$STUDENT_DIR LAB_FILE=$APP_DIR/lab.yml /opt/venv/bin/python $repo/run.py
 EOF
     chmod 755 /usr/local/bin/lab
     echo "Installed. Start the lab with: lab"

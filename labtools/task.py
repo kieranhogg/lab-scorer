@@ -14,7 +14,7 @@ from labtools.state import LAB_HOME, read_passed, save_captured, write_step
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_LAB_FILE = "./labs/example/lab.yml"
+DEFAULT_LAB_FILE = "/opt/lab/lab.yml"
 # Setup scripts missing next to the lab file are looked up here, which is the repo root.
 LAB_DIR = Path(os.environ.get("LAB_DIR", Path(__file__).parent.parent))
 SETUP_MARKER = LAB_HOME / ".setup-done"
