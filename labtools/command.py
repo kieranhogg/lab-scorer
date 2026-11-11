@@ -18,6 +18,7 @@ DEFAULT_TIMEOUT = 30
 DURATION_SECONDS = {"s": 1, "m": 60, "h": 3600}
 CAPTURE_NAME = r"[a-z][a-z0-9_]*"
 CAPTURE_REF = re.compile(rf"\$\{{captured\.({CAPTURE_NAME})\}}")
+EMBEDDED_COMMAND = re.compile(r"\{%\s*(.+?)\s*%\}")
 RUNUSER = "/usr/sbin/runuser"
 TRUE_WORDS = {"true", "1", "yes", "y"}
 FALSE_WORDS = {"false", "0", "no", "n", ""}

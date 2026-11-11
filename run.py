@@ -29,7 +29,7 @@ from textual.widgets import (
 )
 
 from labtools.check import groups_pass_silently, step_groups
-from labtools.command import fill_captured
+from labtools.command import EMBEDDED_COMMAND, fill_captured
 from labtools.hint import available_indices
 from labtools.lint import validate_lab
 from labtools.score import compute_score
@@ -207,8 +207,7 @@ class Lab(App):
         return command
 
     def linkify_commands(self, text: str) -> str:
-        return re.sub(
-            r"\{\%(.+?)\%\}",
+        return EMBEDDED_COMMAND.sub(
             lambda m: f"[`⌨️ {m.group(1)}`](cmd:{quote(m.group(1))})",
             text,
         )
