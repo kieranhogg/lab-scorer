@@ -3,6 +3,7 @@
 This wraps up the textual-related code needed in run.py, interacting with the terminal
 via send_text and screen_text.
 """
+import re
 from collections import deque
 
 import pyte
@@ -28,6 +29,9 @@ from textual_terminal._terminal import TerminalDisplay, TerminalPyteScreen
 
 # Lines of output kept for scrolling back
 SCROLLBACK_LINES = 2000
+
+# Trailing punctuation is left off, it usually ends the sentence rather than the URL
+URL_PATTERN = re.compile(r"https?://[^\s<>\"'`]*[^\s<>\"'`.,;:!?)\]}]")
 
 
 class ScrollbackScreen(TerminalPyteScreen):
@@ -149,11 +153,39 @@ class LabTerminal(BlinkingTerminal):
         history = self._screen.history
         # The history is followed by the live screen, and scroll_y is the first line shown
         first = round(self.scroll_y)
-        if display is None or first >= len(history):
+        if display is None:
             return display
         lines = [self._history_text(history[i]) for i in range(first, min(first + self.size.height, len(history)))]
         lines.extend(display.lines[: self.size.height - len(lines)])
+        self._linkify(lines)
         return TerminalDisplay(lines)
+
+    @staticmethod
+    def _linkify(lines: list[Text]) -> None:
+        """Make URLs clickable. Textual runs the @click action and underlines them on hover."""
+        # pyte does not record soft wraps, so a line filled to the last column is taken to carry
+        # on into the next one. Lines are padded to the full width, so that means no trailing space.
+        joined = ""
+        starts = []
+        for line in lines:
+            if joined and not joined[-1].isspace():
+                starts.append(len(joined))
+            else:
+                joined += "\n"
+                starts.append(len(joined))
+            joined += line.plain
+        for match in URL_PATTERN.finditer(joined):
+            style = Style.from_meta({"@click": f"open_url({match.group()!r})"})
+            # Style every line the URL passes through with the whole URL
+            for line, start in zip(lines, starts):
+                begin, end = max(match.start(), start), min(match.end(), start + len(line.plain))
+                if begin < end:
+                    line.stylize(style, begin - start, end - start)
+
+    def action_open_url(self, url: str) -> None:
+        # A program tracking the mouse, such as vim, gets the click instead
+        if not self.mouse_tracking:
+            self.app.open_url(url)
 
     async def on_key(self, event: events.Key) -> None:
         # Typing returns to the live screen, as it does in other terminals
